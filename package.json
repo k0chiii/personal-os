@@ -1,0 +1,11 @@
+{
+  "name": "personal-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "scripts": {},
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
