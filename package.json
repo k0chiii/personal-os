@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.3.4",
   "scripts": {},
   "devDependencies": {
-    "typescript": "^7.0.2"
-  }
+    "typescript": "^7.0.2",
+    "vite-plus": "0.3.0"
+  },
+  "packageManager": "pnpm@12.3.4"
 }
