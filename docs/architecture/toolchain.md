@@ -11,7 +11,7 @@ The toolchain includes:
 - Oxlint
 - Oxfmt
 - Vitest
-- tsgolint
+- tsgolint (via `oxlint-tsgolint`)
 - Vite Task
 - tsdown
 - Rolldown

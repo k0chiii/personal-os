@@ -6,8 +6,12 @@ mise
 
 ## Node.js
 
-```text
-v24.18.0
+Node.js 24.x
+
+Configured through mise:
+
+```toml
+node = "24"
 ```
 
 ## Package Manager
@@ -81,6 +85,10 @@ vite-plus@0.3.0
 ├── depends on oxfmt@0.64.0
 └── compiles vite-task (built 2026-08-24T03:41:26Z, revision d05b1dcdbaabaa69643ee0b89cebe3cd390957e9)
 ```
+
+> Note: `vp toolchain` reports Vite+'s toolchain metadata.
+> The package manager may resolve a newer compatible transitive
+> dependency version; see `pnpm why rolldown`.
 
 ## Environment Policy
 
