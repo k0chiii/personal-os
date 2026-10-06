@@ -3,7 +3,7 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   lint: {
     ignorePatterns: ["dist/**", "coverage/**"],
-    plugins: ["typescript"],
+    plugins: ["typescript", "import"],
     options: {
       typeAware: true,
       typeCheck: true,
@@ -16,6 +16,12 @@ export default defineConfig({
       eqeqeq: "error",
       "no-console": ["error", { allow: ["warn", "error"] }],
       "typescript/no-explicit-any": "error",
+      "import/no-cycle": [
+        "error",
+        {
+          ignoreTypes: false,
+        },
+      ],
     },
     overrides: [
       {
@@ -42,6 +48,26 @@ export default defineConfig({
         rules: {
           "typescript/no-explicit-any": "off",
           "vitest/no-disabled-tests": "error",
+        },
+      },
+      {
+        files: ["packages/domain/**/*.ts"],
+        rules: {
+          "no-restricted-imports": [
+            "error",
+            {
+              patterns: [
+                {
+                  group: ["@personal-os/adapters-*"],
+                  message: "Domain must not depend on infrastructure adapters.",
+                },
+                {
+                  regex: "^(\\.\\./)+(packages/)?adapters-[^/]+(/|$)",
+                  message: "Domain must not bypass package boundaries with relative imports.",
+                },
+              ],
+            },
+          ],
         },
       },
     ],
