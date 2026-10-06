@@ -185,9 +185,7 @@ must not import infrastructure adapter packages.
 Package-level imports such as:
 
 ```ts
-
 import { Something } from "@personal-os/adapters-local";
-
 ```
 
 are prohibited.
@@ -195,9 +193,7 @@ are prohibited.
 Type-only imports are also considered architectural dependencies:
 
 ```ts
-
 import type { Something } from "@personal-os/adapters-local";
-
 ```
 
 and are prohibited as well.
@@ -207,9 +203,7 @@ Relative imports that bypass package names are also forbidden.
 For example:
 
 ```ts
-
 import type { Something } from "../../adapters-local/src/something";
-
 ```
 
 must not be used as an escape hatch around the package boundary.
@@ -253,9 +247,7 @@ The Vite+ lint configuration includes the `import` plugin in addition to the exi
 Conceptually:
 
 ```ts
-
 plugins: ["typescript", "import"];
-
 ```
 
 Circular dependencies are rejected with:
@@ -497,17 +489,11 @@ This is distinct from dependencies declared in `package.json`.
 For example, the following declaration is architecturally suspicious even if no source file imports it yet:
 
 ```json
-
 {
-
   "dependencies": {
-
     "@personal-os/adapters-local": "workspace:*"
-
   }
-
 }
-
 ```
 
 A source-level import rule alone does not guarantee detection of every invalid manifest dependency.
