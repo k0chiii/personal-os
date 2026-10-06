@@ -1,4 +1,4 @@
-# ADR-0002: Adopt dependency-cruiser for architecture dependency enforcement
+# ADR-0002: Enforce architecture dependency boundaries with Oxlint
 
 ## Status
 
@@ -6,338 +6,755 @@ Accepted
 
 ## Context
 
-Personal OS is configured as a modular monolith with explicit package boundaries.
+Personal OS is structured as a modular monolith with explicit package boundaries.
 
-The repository contains, for example, the following packages:
+The repository contains packages such as:
 
 ```text
+
 packages/domain
+
 packages/application
+
 packages/ports
+
+packages/contracts
+
 packages/adapters-local
+
 packages/adapters-openai
+
 packages/adapters-ollama
+
 packages/adapters-cloudflare
+
 packages/adapters-aws
+
 ```
 
-However, simply separating directories and defining packages as a pnpm workspace does not guarantee architectural dependency direction.
+Separating these packages into directories and registering them in a pnpm workspace does not by itself enforce architectural dependency direction.
 
-pnpm workspace mainly handles:
+pnpm primarily defines:
 
-- Packages belonging to the workspace
-- Dependency resolution between packages
+- which packages belong to the workspace
 
-and does not handle the architectural rules themselves, such as:
+- how workspace packages resolve each other
+
+It does not understand architectural constraints such as:
 
 ```text
+
 domain must not depend on adapters
+
 ```
 
-In Personal OS, it is an important invariant that inner layers do not depend on outer infrastructure implementations.
+Personal OS treats inward dependency direction as an important architectural invariant.
 
-For example, the following dependencies are prohibited:
+For example, the following dependencies are forbidden:
 
 ```text
+
 domain ──────X──────> adapters-local
+
 domain ──────X──────> adapters-openai
+
 domain ──────X──────> adapters-cloudflare
+
 ```
 
-On the other hand, allowing outer adapters to depend on Domain or Ports is acceptable:
+while infrastructure adapters may depend inward on Domain or Ports:
 
 ```text
+
 adapters-local ─────> domain
+
 adapters-local ─────> ports
+
 ```
 
-Such architectural rules must not only be written as documentation, but also be mechanically verifiable.
+These rules should not exist only as documentation or code-review conventions. They should be mechanically enforceable.
 
-In ENV-058, we mainly compared the following two options as methods for architecture dependency enforcement:
-
-1. Use a dedicated static dependency analyzer like dependency-cruiser
-2. Implement repository-owned architecture tests on Vitest
-
-As a result of the comparison, we emphasize that what we want to verify this time is not the runtime behavior of the application, but the static dependency structure of the source code.
+The relevant distinction is:
 
 ```text
+
 unit / integration test
-  → Verifies runtime behavior
+
+  → verifies runtime behavior
 
 architecture dependency check
-  → Verifies static structure
+
+  → verifies static source structure
+
 ```
 
-Due to this difference in responsibility, it is more natural to handle architecture dependency enforcement separately from regular tests.
+Architecture dependency enforcement therefore belongs to static analysis rather than runtime testing.
+
+## Initial Investigation
+
+Several approaches were considered.
+
+The first serious candidate was dependency-cruiser because it is specifically designed to analyze JavaScript and TypeScript dependency graphs.
+
+It supports concepts such as:
+
+- forbidden dependency directions
+
+- circular dependency detection
+
+- module dependency graph inspection
+
+- declarative architecture rules
+
+A configuration was initialized locally and the environment was inspected with:
+
+```bash
+
+pnpm exec dependency-cruiser --info
+
+pnpm exec dependency-cruiser --init
+
+```
+
+The repository was correctly detected as:
+
+- a monorepo
+
+- an ESM project
+
+- a TypeScript project using the shared TypeScript configuration
+
+However, dependency-cruiser 18.5.0 reported:
+
+```text
+
+typescript   >=2.0.0 <7.0.0
+
+```
+
+while Personal OS currently uses TypeScript 7.0.2.
+
+As a consequence, dependency-cruiser did not enable TypeScript source analysis:
+
+```text
+
+x .ts
+
+x .tsx
+
+x .d.ts
+
+```
+
+Using dependency-cruiser would therefore require either:
+
+1. downgrading the repository from TypeScript 7, or
+
+2. running an architecture analyzer outside its declared TypeScript compatibility range
+
+Neither option was considered desirable.
+
+Downgrading TypeScript solely for architecture enforcement would make the broader toolchain conform to a secondary analysis tool rather than the other way around.
+
+Running an unsupported parser configuration would weaken confidence in the architecture enforcement mechanism itself.
+
+This triggered a reconsideration of tools already available in the existing Vite+ / Oxlint toolchain.
 
 ## Decision
 
-In Personal OS v0.1, we adopt dependency-cruiser for architecture dependency enforcement.
+Personal OS v0.1 will use Oxlint as the source-level architecture dependency enforcement mechanism.
 
-The dependency-cruiser configuration will serve as the Source of Truth for source-level architecture dependency rules.
+Architecture constraints will be expressed through Oxlint rules in the existing Vite+ lint configuration.
 
-Initially, we will define at least the following rule:
+No separate architecture test runner or dependency-analysis command will be introduced for v0.1.
+
+The initial enforcement consists of two mechanisms.
+
+### Restricted dependency directions
+
+Source files under:
 
 ```text
+
 packages/domain/**
-    must not depend on
-packages/adapters-*/**
+
 ```
 
-In the future, as the architecture becomes more concrete, we will express dependency directions such as:
+must not import infrastructure adapter packages.
 
-```text
-domain
-  X→ application
-  X→ adapters
-  X→ apps
+Package-level imports such as:
 
-application
-  → domain
-  → ports
-  X→ concrete adapters
+```ts
 
-adapters
-  → domain
-  → ports
+import { Something } from "@personal-os/adapters-local";
 
-apps
-  → application
-  → adapters
 ```
 
-We will provide a repository command to run the architecture check:
+are prohibited.
 
-```text
-pnpm check:arch
+Type-only imports are also considered architectural dependencies:
+
+```ts
+
+import type { Something } from "@personal-os/adapters-local";
+
 ```
 
-Dependency-cruiser will be executed via this command, utilizing the same rule set in both local development and CI.
+and are prohibited as well.
 
-Architecture validation will be separated from unit and integration tests:
+Relative imports that bypass package names are also forbidden.
+
+For example:
+
+```ts
+
+import type { Something } from "../../adapters-local/src/something";
+
+```
+
+must not be used as an escape hatch around the package boundary.
+
+This rule is implemented using Oxlint's `no-restricted-imports`.
+
+Conceptually:
 
 ```text
+
+packages/domain/**
+
+        X
+
+        └── packages/adapters-*
+
+```
+
+### Circular dependencies
+
+Circular source dependencies are also treated as architecture violations.
+
+For example:
+
+```text
+
+A → B → C → A
+
+```
+
+must be rejected.
+
+Oxlint's `import/no-cycle` rule is enabled for this purpose.
+
+Type-only dependencies are included in the cycle analysis because architectural coupling exists even when the dependency disappears after TypeScript compilation.
+
+## Current Configuration
+
+The Vite+ lint configuration includes the `import` plugin in addition to the existing TypeScript plugin.
+
+Conceptually:
+
+```ts
+
+plugins: ["typescript", "import"];
+
+```
+
+Circular dependencies are rejected with:
+
+```ts
+
+"import/no-cycle": [
+
+  "error",
+
+  {
+
+    ignoreTypes: false,
+
+  },
+
+];
+
+```
+
+Domain-specific boundary enforcement is applied through an override:
+
+```ts
+
+{
+
+  files: ["packages/domain/**/*.ts"],
+
+  rules: {
+
+    "no-restricted-imports": [
+
+      "error",
+
+      {
+
+        patterns: [
+
+          {
+
+            group: ["@personal-os/adapters-*"],
+
+            message:
+
+              "Domain must not depend on infrastructure adapters.",
+
+          },
+
+          {
+
+            regex:
+
+              "^(\\.\\./)+(packages/)?adapters-[^/]+(/|$)",
+
+            message:
+
+              "Domain must not bypass package boundaries with relative imports.",
+
+          },
+
+        ],
+
+      },
+
+    ],
+
+  },
+
+}
+
+```
+
+The configuration therefore treats architecture enforcement as part of the repository's normal static-analysis pipeline.
+
+## Enforcement Model
+
+The resulting enforcement structure is:
+
+```text
+
+vite.config.ts
+
+      ↓
+
+Oxlint architecture rules
+
+      ↓
+
 vp check
-  → formatting
-  → lint
-  → type checking
+
+      ↓
+
+CI
+
+```
+
+The architecture rules live alongside the other static-analysis rules rather than behind a separate command.
+
+This intentionally avoids introducing:
+
+```text
 
 pnpm check:arch
-  → architecture dependency analysis
+
+```
+
+for v0.1.
+
+Instead:
+
+```text
+
+vp check
+
+├── lint
+
+├── type-aware checks
+
+├── architecture boundary rules
+
+└── circular dependency rules
 
 vp test
-  → unit tests
-  → integration tests
+
+├── unit tests
+
+└── integration tests
+
 ```
 
-Allowing these to be executed collectively from higher-level commands like Vite Tasks in the future is acceptable, but the responsibilities of each check will remain separated.
+Static architecture constraints therefore remain separate from behavioral tests while still sharing the existing static-analysis entry point.
 
-## Local Git Hook Policy
+## Verification
 
-To discover architecture violations as early as possible during development, we configure the setup so that `pnpm check:arch` can be executed from Git hooks.
+The architecture rule was verified with an intentional violation.
 
-Git hooks are positioned as a developer feedback mechanism, not as the Source of Truth for architectural rules.
+A temporary dependency from Domain to `adapters-local` was created using a relative TypeScript import.
 
-```text
-git commit / git push
-        ↓
-pnpm check:arch
-        ↓
-Early detection of violations
-```
-
-Whether to run this during `pre-commit` or `pre-push` will be determined based on the actual execution time of dependency-cruiser.
-
-While the repository is small and sufficiently fast, execution during `pre-commit` is allowed.
-
-If the growth of the repository causes the check to hinder the development workflow, moving it to `pre-push` will be considered.
-
-Execution time will be measured, for example, as follows:
+Running:
 
 ```bash
-time pnpm check:arch
+
+vp check
+
 ```
 
-Because Git hooks can be bypassed with `--no-verify` or similar flags, they will not be used as the ultimate guarantee of architecture enforcement.
+failed as expected.
+
+The temporary violation was then removed and `vp check` returned to a passing state.
+
+This confirms that the configured rule is not merely present in configuration but actively prevents the dependency direction it is intended to prohibit.
 
 ## CI Policy
 
-CI will serve as the authoritative enforcement mechanism for architecture dependency rules.
+CI is the authoritative enforcement mechanism.
 
-For Pull Requests, the following will be executed at a minimum:
+The existing CI pipeline already runs:
 
 ```text
+
 vp check
-pnpm check:arch
+
 vp test
+
 ```
 
-If `pnpm check:arch` fails, the change will be treated as violating architectural rules, and merging will not be permitted.
+Because architecture enforcement is integrated into `vp check`, no additional CI command is required.
 
-This establishes the following structure:
+A Pull Request containing a prohibited architecture dependency will cause `vp check` to fail and therefore prevent the CI check from passing.
+
+The resulting structure is:
 
 ```text
-dependency-cruiser configuration
-        ↓
-Source of Truth for architecture rules
 
-pnpm check:arch
-        ↓
-Common execution interface
+Oxlint configuration
 
-Git hook
         ↓
-Local feedback
+
+architecture rule Source of Truth
+
+        ↓
+
+vp check
+
+        ↓
+
+local static feedback
+
+        ↓
 
 CI
+
         ↓
-Authoritative enforcement
+
+authoritative enforcement
+
 ```
+
+## Local Git Hook Policy
+
+Git hooks may be introduced later as an additional developer-feedback mechanism.
+
+Because architecture validation is already part of `vp check`, a future hook can invoke the existing static-analysis workflow rather than introducing a second architecture-specific command.
+
+Possible strategies include:
+
+```text
+
+pre-commit
+
+  → lightweight lint or targeted static checks
+
+```
+
+or:
+
+```text
+
+pre-push
+
+  → vp check
+
+  → vp test
+
+```
+
+The choice should be based on measured execution time and developer experience.
+
+Git hooks are not considered authoritative because they can be bypassed.
+
+CI remains the final enforcement layer.
 
 ## Package Manifest Validation
 
-The primary target verified by dependency-cruiser is the module dependency graph existing in source code.
+Oxlint currently enforces source-level dependencies.
 
-On the other hand, cases may exist where invalid dependencies are declared in `package.json`, such as below, but are not yet imported from source code:
+This is distinct from dependencies declared in `package.json`.
+
+For example, the following declaration is architecturally suspicious even if no source file imports it yet:
 
 ```json
+
 {
+
   "dependencies": {
+
     "@personal-os/adapters-local": "workspace:*"
+
   }
+
 }
+
 ```
 
-This is a different issue from source dependency analysis.
+A source-level import rule alone does not guarantee detection of every invalid manifest dependency.
 
-In the long term, we will consider treating architecture enforcement as two layers:
+Long term, architecture enforcement may therefore consist of two layers:
 
 ```text
+
 Architecture Enforcement
-├── dependency-cruiser
-│   └── source / module dependency graph
+
+├── Oxlint
+
+│   ├── source import restrictions
+
+│   └── circular dependency detection
+
 │
+
 └── manifest validation
+
     └── package.json dependency declarations
+
 ```
 
-However, in v0.1, we prioritize source-level dependency enforcement via dependency-cruiser.
+For v0.1, source-level enforcement is considered sufficient.
 
-Manifest validation will be added at the point when its necessity actually becomes clear.
+Manifest-level validation will be added if package dependency declarations become complex enough to justify a separate mechanism.
 
 ## Alternatives Considered
 
-### Alternative A: Repository-Owned Architecture Tests
+### Alternative A: dependency-cruiser
 
-We considered implementing architecture tests on Vitest to inspect, for example, `packages/domain/package.json` or source files.
+dependency-cruiser was initially the preferred option because architecture dependency analysis is its primary purpose.
 
-This approach has the following advantages:
+Advantages include:
 
-- Existing `vp test` infrastructure can be utilized
-- No need to add new architecture-analysis tools
-- Easy implementation for small invariants
-- Rule meanings are directly visible as test code
+- declarative dependency graph rules
 
-On the other hand, accurately analyzing source-level dependencies requires handling the following:
+- circular dependency detection
+
+- dedicated dependency analysis
+
+- architecture-oriented reporting
+
+- scalability to larger dependency graphs
+
+It was also tested directly in the Personal OS repository.
+
+However, dependency-cruiser 18.5.0 currently supports TypeScript versions below 7 while Personal OS uses TypeScript 7.0.2.
+
+Its environment inspection therefore did not enable TypeScript source parsing.
+
+Adopting it would require changing the primary TypeScript toolchain for the sake of a secondary analysis tool or relying on an unsupported configuration.
+
+Additionally, after inspecting the existing Oxlint capabilities, the rules required for v0.1 were found to already exist in the current toolchain.
+
+Introducing dependency-cruiser would therefore add:
+
+- another development dependency
+
+- another configuration file
+
+- another execution command
+
+- another tool lifecycle to maintain
+
+without providing enough additional value at the current architecture scale.
+
+dependency-cruiser is therefore not adopted in v0.1.
+
+It remains a possible future option if its TypeScript compatibility and the repository's requirements change.
+
+### Alternative B: Repository-Owned Architecture Tests
+
+Architecture rules could be implemented as Vitest tests.
+
+For example, a custom test could scan source files or `package.json` files for prohibited dependencies.
+
+This would avoid introducing a dedicated architecture tool.
+
+However, accurate dependency analysis quickly requires handling:
 
 ```text
+
 static import
+
 re-export
+
 dynamic import
-TypeScript module resolution
-package alias
-circular dependency
-transitive dependency
+
+type-only import
+
+module resolution
+
+package aliases
+
+circular dependencies
+
+transitive dependencies
+
 ```
 
-Extending this implementation would mean re-implementing parts of a dedicated dependency-analysis tool inside Personal OS.
+Implementing these correctly would gradually recreate a dependency-analysis tool inside Personal OS.
 
-Because architecture dependency analysis itself is not Personal OS's product domain, we avoid re-implementing in the repository problems that existing dedicated tools already solve.
+Architecture dependency analysis is not part of the Personal OS product domain.
 
-Therefore, we do not adopt this in v0.1.
+Additionally, architecture structure is a static-analysis concern rather than a runtime behavioral concern.
 
-### Alternative B: Documentation Only
+For these reasons, architecture enforcement is not implemented as a normal Vitest suite.
 
-Recording architecture rules in `docs/architecture` and relying on human code review to verify violations was also considered.
+### Alternative C: Documentation Only
 
-This is the simplest option requiring no additional tools, but architectural rules are not enforced.
+Architecture rules could exist only in:
 
-As the repository grows, missed violations during reviews and violations by contributors unaware of design intent become more likely to occur.
+```text
 
-In Personal OS, because architectural boundaries are considered important invariants, we do not rely solely on documentation.
+docs/architecture/
 
-### Alternative C: TypeScript Configuration Only
+```
 
-Constraining dependency directions using TypeScript project structures, path aliases, package boundaries, etc., was also considered.
+and be enforced through code review.
 
-However, TypeScript configurations are mainly responsible for module resolution and type checking, and are insufficient for declaring architecture dependency graph policies.
+This has minimal tooling cost but provides no machine enforcement.
 
-We also want to avoid complicating `tsconfig` for the sake of architecture rule enforcement.
+As the repository grows, architectural violations would increasingly depend on reviewer awareness and memory.
 
-Therefore, TypeScript configuration and architecture enforcement will be treated as separate responsibilities.
+Because dependency direction is treated as an important invariant, documentation alone is insufficient.
+
+### Alternative D: TypeScript Configuration Only
+
+TypeScript project configuration and module resolution can influence which imports resolve successfully.
+
+However, `tsconfig` is primarily responsible for TypeScript compilation, module resolution, and type checking.
+
+Using it as the primary architecture-policy mechanism would overload its responsibility and make architecture rules less explicit.
+
+Architecture policy therefore remains separate from TypeScript compiler configuration.
+
+### Alternative E: Nx Module Boundary Rules
+
+Nx provides richer project-level module-boundary enforcement and could eventually express package dependency matrices through project metadata and tags.
+
+For example:
+
+```text
+
+type:domain
+
+type:application
+
+type:adapter
+
+type:app
+
+```
+
+could potentially be used to define allowed package relationships.
+
+This is more expressive than the current Oxlint configuration.
+
+However, adopting Nx would introduce an additional monorepo/project-graph layer into a repository that currently uses pnpm workspace and Vite+ successfully.
+
+For the v0.1 rule set, this would add unnecessary infrastructure.
+
+Nx may be reconsidered if the package dependency graph becomes substantially more complex.
 
 ## Consequences
 
 ### Positive
 
-Architecture dependency rules become machine-checkable.
+Architecture rules are machine-checkable.
 
-The separation between Domain and infrastructure can be maintained without relying solely on developer memory or code reviews.
+TypeScript 7 can remain in use.
 
-By using a dedicated dependency-analysis tool, there is no need to custom-implement source dependency parsing.
+No additional architecture-analysis dependency is required.
 
-Rules can be managed declaratively.
+Architecture enforcement uses the existing Vite+ / Oxlint toolchain.
 
-Easily expandable in the future to:
+No additional CI command is required.
 
-```text
-circular dependency detection
-package-level dependency restrictions
-layer dependency rules
-cross-context restrictions
-dependency graph inspection
-```
+Architecture validation remains a static-analysis concern instead of being modeled as a runtime test.
 
-The same `pnpm check:arch` can be utilized from both Git hooks and CI.
+Domain-to-adapter imports are rejected.
 
-The responsibilities of unit / integration tests and architecture validation are separated.
+Relative-import attempts to bypass package boundaries are rejected.
+
+Type-only dependencies are treated as architectural dependencies.
+
+Circular dependencies can be detected.
+
+The same `vp check` command works locally and in CI.
+
+The architecture rule has been verified with an intentional negative case.
 
 ### Negative
 
-Adds a new development dependency and configuration in dependency-cruiser.
+Oxlint's current rule set is less expressive than a dedicated full dependency-graph architecture tool.
 
-Adds one more check that is not completed by Vite+ alone.
+The architecture policy is distributed through lint overrides rather than represented as a complete package dependency matrix.
 
-Requires understanding and maintaining dependency-cruiser rule syntax and behavior.
+Source-level enforcement does not automatically validate every `package.json` dependency declaration.
 
-Because the source-level dependency graph and `package.json` manifest dependencies are not completely identical issues, separate manifest validation may become necessary in the future.
+As the number of packages and architectural rules grows, `no-restricted-imports` configuration may become difficult to maintain.
 
-When running architecture checks in local Git hooks, execution time may affect developer experience as the repository grows.
+The architecture configuration is coupled to the Vite+ / Oxlint toolchain.
 
 ## Revisit Conditions
 
-This decision will be reconsidered under the following circumstances:
+This decision should be revisited if any of the following occur:
 
-If dependency-cruiser can no longer correctly analyze required dependencies of TypeScript / workspace structures.
+- package-level dependency rules grow substantially
 
-If Vite+ or another existing toolchain comes to provide equivalent or superior architecture dependency enforcement.
+- maintaining allowed and forbidden imports through lint overrides becomes difficult
 
-If the maintenance cost of dependency-cruiser becomes too large compared to the value of the architecture rules.
+- a complete dependency matrix is required
 
-If a need arises to comprehensively verify package manifests, runtime dependencies, deployment boundaries, etc., in addition to source dependencies.
+- manifest dependencies must be enforced alongside source imports
 
-If architecture rules come to be generated from ontologies or repository metadata, making manual management of dedicated configs unnatural.
+- cross-bounded-context rules become significantly more complex
 
-If execution time on Git hooks continuously degrades developer experience. In this case, however, rather than deprecating dependency-cruiser itself, moving from `pre-commit` to `pre-push` will be considered first.
+- visualization of the dependency graph becomes important
+
+- Oxlint no longer provides sufficient analysis capabilities
+
+- dependency-cruiser gains suitable TypeScript 7 support and offers clear additional value
+
+- Nx or another project-graph tool becomes justified by broader repository requirements
+
+- architecture policy begins to be generated from repository metadata or ontology definitions
+
+A future migration should preserve the same architectural invariant even if the enforcement tool changes.
 
 ## Related Requirements
 
 - ENV-056
+
 - ENV-057
+
 - ENV-058
+
 - ENV-059
+
 - ENV-DOD-03
+
 - ENV-DOD-05
+
+- ENV-DOD-06
 
 ## Related ADRs
 
