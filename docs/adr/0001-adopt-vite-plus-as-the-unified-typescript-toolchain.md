@@ -125,3 +125,19 @@ Reconsider this decision if:
 ## Related ADRs
 
 - None
+
+## Update: Vite+ 1.0 stabilization
+
+Vite+ reached 1.0 and the repository migrated from 0.3.0 to 1.0.0
+before application implementation began.
+
+The original decision to pin the beta version and preserve a fallback
+was appropriate during the beta period. The repository now treats
+Vite+ 1.0 as the stable baseline.
+
+The migration was validated with:
+
+- `vp check`
+- `vp test`
+- architecture-boundary negative testing through Oxlint
+- CI
