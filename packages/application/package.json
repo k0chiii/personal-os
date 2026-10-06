@@ -1,0 +1,9 @@
+{
+  "name": "@personal-os/application",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@personal-os/domain": "workspace:*"
+  }
+}

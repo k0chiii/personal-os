@@ -116,6 +116,40 @@ importers:
         specifier: 0.3.0
         version: 0.3.0(typescript@7.0.2)(vite@8.2.2)
 
+  apps/api: {}
+
+  apps/cli: {}
+
+  apps/mcp-server: {}
+
+  apps/web: {}
+
+  packages/adapters-aws: {}
+
+  packages/adapters-cloudflare: {}
+
+  packages/adapters-local: {}
+
+  packages/adapters-ollama: {}
+
+  packages/adapters-openai: {}
+
+  packages/application:
+    dependencies:
+      '@personal-os/domain':
+        specifier: workspace:*
+        version: link:../domain
+
+  packages/contracts: {}
+
+  packages/domain: {}
+
+  packages/eval: {}
+
+  packages/observability: {}
+
+  packages/ports: {}
+
 packages:
 
   '@babel/code-frame@7.29.7':
