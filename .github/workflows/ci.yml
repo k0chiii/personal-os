@@ -16,6 +16,6 @@ jobs:
         with:
           node-version: "24"
           cache: true
-      - run: pnpm install --frozen-lockfile
+      - run: vp install --frozen-lockfile
       - run: vp check
       - run: vp test

@@ -97,10 +97,13 @@ vp test    Vitest
 CI runs:
 
 ```text
-pnpm install --frozen-lockfile
+vp install --frozen-lockfile
 vp check
 vp test
 ```
+
+`vp install` still uses the pinned pnpm from `packageManager`.
+`setup-vp` does not put a bare `pnpm` binary on PATH.
 
 ## Architecture Risk: Vite+ Beta
 
