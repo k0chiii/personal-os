@@ -2,5 +2,8 @@
   "name": "@personal-os/domain",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "temporal-polyfill": "^1.0.5"
+  }
 }

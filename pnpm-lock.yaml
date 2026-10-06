@@ -118,6 +118,9 @@ importers:
 
   .:
     devDependencies:
+      temporal-polyfill:
+        specifier: ^1.0.5
+        version: 1.0.5
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -151,41 +154,11 @@ importers:
 
   packages/contracts: {}
 
-  packages/domain: {}
-
-  packages/eval: {}
-
-  packages/observability: {}
-
-  packages/ports: {}
-
-  apps/api: {}
-
-  apps/cli: {}
-
-  apps/mcp-server: {}
-
-  apps/web: {}
-
-  packages/adapters-aws: {}
-
-  packages/adapters-cloudflare: {}
-
-  packages/adapters-local: {}
-
-  packages/adapters-ollama: {}
-
-  packages/adapters-openai: {}
-
-  packages/application:
+  packages/domain:
     dependencies:
-      '@personal-os/domain':
-        specifier: workspace:*
-        version: link:../domain
-
-  packages/contracts: {}
-
-  packages/domain: {}
+      temporal-polyfill:
+        specifier: ^1.0.5
+        version: 1.0.5
 
   packages/eval: {}
 
@@ -1166,6 +1139,15 @@ packages:
   std-env@4.2.0:
     resolution: {integrity: sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw==}
 
+  temporal-polyfill@1.0.5:
+    resolution: {integrity: sha512-+H/mmY74i6wXCMcjIhGuSnODcyZnc4eois2myhOyX0UqRAKNXQY5m9iB1en5jQ/n4SXtjLXo1ElBI5bmn8tZwQ==}
+
+  temporal-spec@1.0.1:
+    resolution: {integrity: sha512-wxVoanmDeavXie1vu2JaQ3WIc3JZnWAOYFBsJyATaVsXsycKYUflGsyBmrRSnoCpZJpwPyr38VpgSUlQ8CbFxg==}
+
+  temporal-utils@1.0.3:
+    resolution: {integrity: sha512-9jbTSX3HvkOWvDpNpFzwX/d1mkCrgQgwLmVTOEiuocZGKHsrQJtttGZFmybJ2zYP5zCSZuU5ZyeS8+eOEPABiQ==}
+
   tinybench@6.1.4:
     resolution: {integrity: sha512-9APumHG7r4yOk4X4WlkmE71aZcv1gvin1czO3OQ1U9iJcFA5Ja/ygyb0vPOVHTthFozUYs8CLoLUlM8grb2lTQ==}
     engines: {node: '>=20.0.0'}
@@ -1905,6 +1887,15 @@ snapshots:
   stackback@0.0.2: {}
 
   std-env@4.2.0: {}
+
+  temporal-polyfill@1.0.5:
+    dependencies:
+      temporal-spec: 1.0.1
+      temporal-utils: 1.0.3
+
+  temporal-spec@1.0.1: {}
+
+  temporal-utils@1.0.3: {}
 
   tinybench@6.1.4: {}
 
