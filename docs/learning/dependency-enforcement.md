@@ -4,23 +4,38 @@
 
 Personal OS は、明示的な package boundary を持つ modular monolith として構成する。
 
-`packages/domain` や `packages/adapters-local` のようにディレクトリを分けただけでは、architecture は自動的には守られない。TypeScript は、禁止したい依存方向であっても、通常の import として書けてしまう。
+`packages/domain` や `packages/adapters-local` のようにディレクトリを分けただけでは、architecture は自動的には守られない。
 
-たとえば、Domain layer から infrastructure adapter への依存は認めない。
+TypeScript では、architecture 上は禁止したい dependency であっても、通常の import として記述できる。
 
-禁止する依存方向:
+たとえば Domain layer から infrastructure adapter への依存は認めない。
+
+禁止する dependency:
 
 ```text
 domain ──────X──────> adapters-local
 ```
 
-一方で、外側の infrastructure が内側の Domain に依存することは認める。
+一方で、外側の infrastructure adapter が内側の Domain や Port に依存することは認める。
 
 ```text
 adapters-local ─────> domain
+adapters-local ─────> ports
 ```
 
-Architecture dependency enforcement の目的は、このようなルールを「開発者が覚えて守る規約」ではなく、「違反したら自動的に検出できる制約」にすることである。
+Architecture dependency enforcement の目的は、このようなルールを、
+
+```text
+開発者が覚えて守る規約
+```
+
+ではなく、
+
+```text
+違反したら機械的に検出される制約
+```
+
+にすることである。
 
 関連タスク:
 
@@ -33,7 +48,7 @@ Architecture dependency enforcement の目的は、このようなルールを�
 
 当初は、package boundary は主にディレクトリ構造や pnpm workspace によって作られるものだと考えていた。
 
-たとえば、以下のように分離すれば、
+たとえば、
 
 ```text
 packages/domain
@@ -41,264 +56,68 @@ packages/application
 packages/adapters-local
 ```
 
-不適切な依存もある程度防げるように見える。
+と分離すれば、それだけである程度 architecture が守られるようにも見える。
 
-しかし、pnpm workspace が定義するのは主に、
+しかし pnpm workspace が定義しているのは主に、
 
 - どの package が workspace に所属するか
-- workspace 内の package をどのように解決するか
+- workspace package をどのように解決するか
 
-ということであり、
+である。
 
-```text
-domain must not depend on adapters-local
-```
-
-のような architecture rule そのものではない。
-
-そのため、package 構造とは別に、dependency direction を検証する仕組みが必要になる。
-
-## 今回守りたい Architecture Rule
-
-Personal OS で最初に守るルールは、意図的に単純なものとする。
-
-> `packages/domain` は infrastructure adapter package に依存してはならない。
-
-少なくとも、`packages/domain/package.json` に以下のような dependency が存在してはいけない。
-
-```json
-{
-  "dependencies": {
-    "@personal-os/adapters-local": "workspace:*"
-  }
-}
-```
-
-また、Domain の source code が以下のような import を持つことも認めない。
-
-```ts
-import { Something } from "@personal-os/adapters-local";
-```
-
-ただし、本質的なルールは「特定の import 文を禁止する」ということではない。
-
-重要なのは、
-
-> Domain layer が infrastructure implementation の存在を知らない
-
-ということである。
-
-Domain は、永続化や外部通信が具体的に何で実装されているかに依存しない。
-
-たとえば、将来 infrastructure が以下のどれで実装されても、Domain 自体は変更されない状態を目指す。
-
-- SQLite
-- local file system
-- Cloudflare D1
-- AWS
-- external API
-
-つまり、外側の layer が内側へ依存し、内側の layer は外側の implementation を知らない構造を維持する。
-
-## 比較する選択肢
-
-Architecture dependency を機械的に検証する方法として、以下の2案を比較する。
-
-1. dependency-cruiser のような専用 dependency-analysis tool を利用する
-2. repository 内に architecture test を自作する
-
-## 選択肢A: dependency-cruiser
-
-dependency-cruiser は、JavaScript / TypeScript の module dependency graph を解析するための専用 tool である。
-
-たとえば概念的には、
-
-```text
-packages/domain/**
-```
-
-から、
-
-```text
-packages/adapters-*/**
-```
-
-への依存を禁止する、といった rule を定義できる。
-
-### 利点
-
-専用 tool なので、dependency graph の解析に強い。
-
-たとえば以下のようなルールを扱いやすい。
-
-- 禁止された dependency の検出
-- layer 間の依存方向の制約
-- circular dependency の検出
-- package 間の dependency 制限
-- dependency graph の可視化・解析
-
-package 数や architecture rule が増えるほど、専用 tool の価値は高くなる。
-
-また、source code を単純な文字列として扱うのではなく、dependency graph として解析するため、architecture enforcement の用途に適している。
-
-### 欠点
-
-repository に新しい tool と、そのための設定を追加する必要がある。
-
-Personal OS ではすでに、
-
-```text
-Vite+
-  ├── vp check
-  └── vp test
-```
-
-という標準的な実行経路を作っている。
-
-ここに dependency-cruiser を追加すると、
-
-- どの config file を Source of Truth にするか
-- CI でどの command を実行するか
-- Vite+ とどのように役割分担するか
-- tool version をどのように管理するか
-
-といった新しい設計判断が必要になる。
-
-現時点では architecture rule の数が少ないため、専用 tool の能力が過剰である可能性もある。
-
-## 選択肢B: Repository-Owned Architecture Test
-
-もう一つの方法は、architecture rule 自体を通常の test として表現する方法である。
-
-たとえば、
-
-```text
-packages/domain/package.json
-```
-
-を読み込み、adapter package が dependency に含まれていないことを Vitest で検証する。
-
-architecture test は、たとえば以下に置く。
-
-```text
-tests/architecture/
-```
-
-そして既存の、
-
-```text
-vp test
-```
-
-から実行する。
-
-### 利点
-
-すでに存在する test infrastructure をそのまま利用できる。
-
-新しい architecture analysis tool を導入せず、
-
-```text
-vp test
-```
-
-の中に architecture validation を含められる。
-
-また、Personal OS 固有の architecture rule を、その意味に近い形で test として表現できる。
-
-たとえば、
+pnpm 自体は、
 
 ```text
 domain must not depend on adapters
 ```
 
-というルールを、そのまま test case に近い形で書ける。
+という architecture rule を知らない。
 
-これは、architecture を学びながら実装する段階では特に有用である。
-
-rule がどのように検証されているかが隠蔽されにくく、仕組み自体を理解しやすい。
-
-### 欠点
-
-自作 test は、実装した範囲しか検証できない。
-
-たとえば、source file 内から、
+したがって、
 
 ```text
-@personal-os/adapters-local
+workspace structure
 ```
 
-という文字列を単純に検索するだけでは、完全な dependency analysis にはならない。
-
-コメントにも反応する可能性がある。
-
-```ts
-// @personal-os/adapters-local は使用禁止
-```
-
-一方で、import の書き方によっては十分に検出できない可能性もある。
-
-より正確に source-level dependency を解析しようとすると、
-
-- static import
-- export / re-export
-- dynamic import
-- TypeScript module resolution
-- package alias
-- path mapping
-
-などを扱う必要が出てくる。
-
-そこまで進むと、Personal OS のために小さな dependency-cruiser を自作する状態になり、本来の目的から外れてしまう。
-
-## 比較
-
-| 観点                           | dependency-cruiser              | 自作 Architecture Test  |
-| ------------------------------ | ------------------------------- | ----------------------- |
-| 禁止 dependency の検出         | 強い                            | 自分で実装する          |
-| dependency graph の解析        | 標準機能                        | 自作が必要              |
-| circular dependency            | 検出可能                        | 別途実装が必要          |
-| package.json dependency の検査 | 可能                            | 簡単に実装可能          |
-| source import の解析           | 得意                            | 実装方法次第            |
-| 新しい tool dependency         | 増える                          | 増えない                |
-| `vp test` との統合             | 別途統合が必要                  | 自然に統合可能          |
-| 初期設定コスト                 | やや高い                        | 低い                    |
-| 少数 rule への適性             | やや過剰                        | 高い                    |
-| 大規模 dependency graph        | 高い                            | 維持が難しくなる        |
-| 学習上の透明性                 | tool の設定を理解する必要がある | rule の実装が直接見える |
-
-## 重要な区別: 文字列検索と Dependency Analysis
-
-自作 architecture test を採用する場合でも、単純な文字列検索をそのまま完全な dependency analysis と考えてはいけない。
-
-たとえば、
+と、
 
 ```text
-packages/domain 以下の全ファイルを読む
-↓
-"@personal-os/adapters-" を検索する
-↓
-見つかったら失敗
+architecture dependency policy
 ```
 
-という方法は簡単だが、architecture analysis としては限定的である。
+は別の概念として考える必要がある。
 
-false positive や false negative が発生する可能性がある。
+## Workspace Dependency と Architecture Rule の違い
 
-そのため、自作 test は、まず以下のような単純かつ明確な invariant の検証に向いている。
+たとえば `packages/application/package.json` に、
+
+```json
+{
+  "dependencies": {
+    "@personal-os/domain": "workspace:*"
+  }
+}
+```
+
+と書くことは、
 
 ```text
-packages/domain/package.json は
-adapter package を dependency に持ってはならない
+application → domain
 ```
 
-source-level dependency の解析が複雑になってきた場合は、自作実装を拡張し続けるのではなく、専用 dependency-analysis tool の導入を検討すべきである。
+という dependency を宣言することである。
 
-## 学んだこと
+`workspace:*` は、
 
-Monorepo を作ることと、architecture boundary を作ることは同じではない。
+> この dependency を workspace 内の package から解決する
 
-以下は別の概念である。
+という指定であり、
+
+> この dependency direction が architecture 上正しい
+
+ことを保証するものではない。
+
+つまり、以下は別々の層である。
 
 ```text
 pnpm workspace
@@ -315,337 +134,547 @@ architecture rule
 
 architecture enforcement
     ↓
-違反をどのように自動検出するか
+rule 違反をどのように機械的に検出するか
 ```
 
-たとえば、`packages/application/package.json` に、
+## 今回守りたい Architecture Rule
 
-```json
-{
-  "dependencies": {
-    "@personal-os/domain": "workspace:*"
-  }
-}
+最初の rule は意図的に単純にする。
+
+> `packages/domain` は infrastructure adapter に依存してはならない。
+
+禁止したい例:
+
+```ts
+import { Something } from "@personal-os/adapters-local";
 ```
 
-と書くことは、
+type-only import であっても dependency とみなす。
+
+```ts
+import type { Something } from "@personal-os/adapters-local";
+```
+
+また、package name を使わず相対 import で迂回することも認めない。
+
+```ts
+import type { Something } from "../../adapters-local/src/something";
+```
+
+重要なのは、特定の文字列を禁止することではない。
+
+本質的な rule は、
+
+> Domain が concrete infrastructure implementation の存在を知らない
+
+ということである。
+
+Domain は将来 infrastructure が、
+
+- SQLite
+- local file
+- Cloudflare D1
+- AWS
+- OpenAI API
+- Ollama
+
+などのどれで実装されても、それ自体の model や rule を変更せずに利用できる状態を目指す。
+
+## Runtime Test と Static Architecture Check
+
+今回検証したいものは application behavior ではない。
 
 ```text
-application → domain
+unit / integration test
+  → 実行した結果や振る舞いを検証する
+
+architecture dependency check
+  → source code の静的構造を検証する
 ```
 
-という実際の dependency を定義する。
+という違いがある。
 
-しかし pnpm は、
+たとえば、
 
 ```text
 domain → adapters-local
 ```
 
-を architecture 上禁止したいという意図までは知らない。
+が存在するかどうかを調べるために application を実行する必要はない。
 
-つまり architecture を維持するためには、
+source code 上の dependency を静的に解析すればよい。
 
-```text
-documentation
-+
-machine-checkable rule
-```
+そのため architecture dependency enforcement は、通常の unit test より static analysis として扱う方が自然だと考えた。
 
-の両方が必要になる。
+## 最初に比較した選択肢
 
-## Personal OS への設計上の示唆
+当初は主に以下を比較した。
 
-Personal OS では、重要な architecture boundary を単なる慣習としてではなく、実行可能な制約として扱うべきである。
+1. dependency-cruiser のような専用 dependency-analysis tool
+2. repository-owned architecture test
+3. documentation と code review のみによる運用
 
-一方で、enforcement mechanism の複雑さは repository の規模に見合ったものにする必要がある。
+この中では、最初は dependency-cruiser が最も筋がよいように感じた。
 
-v0.1 の段階では architecture rule の数が少ないため、過度に複雑な dependency-analysis infrastructure を導入する必要はない。
+理由は、dependency graph の検査そのものを目的とした専用 tool だからである。
 
-重要なのは、最初から完璧な dependency graph analyzer を作ることではなく、
+## dependency-cruiser に期待したこと
 
-```text
-守りたい architecture invariant
-↓
-機械的に検証する
-```
+dependency-cruiser は JavaScript / TypeScript の module dependency graph を解析する tool である。
 
-という習慣を作ることである。
-
-将来的に以下のような状況になった場合は、専用 tool の導入を再検討する。
-
-- package 数が大幅に増えた
-- package ごとの dependency rule が増えた
-- circular dependency の検出が必要になった
-- allowed / forbidden dependency の組み合わせが複雑になった
-- source-level dependency analysis の自作が難しくなった
-- architecture test が専用 dependency-analysis tool の機能を再実装し始めた
-
-このような状態は、自作 test をさらに巨大化させる理由ではなく、専用 tool へ移行するシグナルと考える。
-
-## 未解決の問い
-
-- v0.1 の architecture test は `package.json` の dependency だけを検査すべきか、それとも source import まで検査すべきか
-- architecture rule が何個程度になったら dependency-cruiser の導入を検討すべきか
-- architecture validation は将来的に `vp check` に含めるべきか、それとも `vp test` に残すべきか
-- `ports`、`application`、複数の adapter package に実装が入り始めたとき、dependency rule をどこまで細かく定義すべきか
-- 将来的に package 間の依存を完全な allowed dependency matrix として定義するべきか
-
-## 関連 Architecture
-
-- `docs/architecture/dependency-boundaries.md`
-
-## 関連 ADR
-
-最終的な v0.1 の enforcement 方針は、別途 ADR で決定する。
-
-- `ADR-0002: Architecture dependency enforcement`
-
-## References
-
-- pnpm workspace protocol documentation
-- dependency-cruiser documentation
-- Personal OS architecture documentation
-
-## 追記: 比較後の考え
-
-比較を進める中で、Personal OS の architecture dependency enforcement は、Vitest 上の自作 test よりも dependency-cruiser のような専用の static dependency analyzer を利用する方が設計上自然だと考えるようになった。
-
-当初は、既存の `vp test` に architecture test を統合することで、新しい tool を増やさずに済むという利点を重視していた。
-
-しかし、今回検証したいものは application behavior ではなく、source code の静的な dependency structure である。
-
-つまり、
+概念的には、
 
 ```text
-unit / integration test
-  → 実行時の振る舞いを検証する
-
-architecture dependency check
-  → source code の構造を静的に検証する
+packages/domain/**
 ```
 
-という責務の違いがある。
-
-この観点から見ると、architecture rule を毎回 Vitest の test case として検証するよりも、dependency graph を解析するために設計された専用 tool に任せる方が責務の分離として自然である。
-
-## Static Analysis を選びたい理由
-
-Personal OS で守りたいのは、たとえば以下のような rule である。
+から、
 
 ```text
-packages/domain
-    X
-    └── packages/adapters-*
+packages/adapters-*/**
 ```
 
-これは「ある入力に対して期待した出力が得られるか」という test ではない。
+への dependency を禁止する rule を宣言できる。
 
-repository の dependency graph が、定義した architecture constraint を満たしているかという静的な問題である。
+専用 tool なので、
 
-そのため理想的には、source code を実行せずに、
+- forbidden dependency
+- dependency direction
+- circular dependency
+- dependency graph analysis
+- cross-package restriction
+
+などを扱える。
+
+source code を単純な文字列として検索するよりも、dependency graph として扱える点も魅力だった。
+
+## Repository-Owned Architecture Test の問題
+
+Vitest 上に architecture test を実装する方法も検討した。
+
+たとえば、
 
 ```text
-source code
-    ↓
-import / export dependency graph
-    ↓
-architecture rules
-    ↓
-violation detection
+packages/domain 以下を検索して
+@personal-os/adapters-* が存在したら fail
 ```
 
-という形で検証したい。
+という test は簡単に作れる。
 
-dependency-cruiser はこの用途を直接扱うため、自作 test で dependency parser を徐々に再実装するよりも筋がよい。
-
-## 自作 Architecture Test に対する再評価
-
-自作 architecture test にも、以下の利点はある。
-
-- 既存の Vitest infrastructure を利用できる
-- rule の意味が test code として明示される
-- 小さな invariant であれば実装が容易
-
-一方で、source-level dependency を正確に検証しようとすると、
+しかし、この方法を正確にしていこうとすると、
 
 - static import
 - re-export
 - dynamic import
+- type-only import
 - TypeScript module resolution
 - package alias
 - circular dependency
 - transitive dependency
 
-などを扱う必要が出てくる。
+などを扱う必要がある。
 
-ここまで実装を広げると、Personal OS の architecture を検証するために、簡易的な dependency-analysis tool を自作することになる。
+ここまで来ると、
 
-これは本来の Personal OS の開発対象ではない。
+> dependency-analysis tool を Personal OS 内部で再実装する
+
+状態になってしまう。
+
+Architecture analysis 自体は Personal OS の product domain ではないため、この方向には進まないことにした。
+
+また、architecture dependency は runtime behavior ではないため、毎回通常の test suite の一部として扱うことにも違和感があった。
+
+## dependency-cruiser を実際に試した
+
+比較だけで終わらせず、dependency-cruiser 18.5.0 を実際に Personal OS repository に導入して確認した。
+
+まず、
+
+```bash
+pnpm exec dependency-cruiser --info
+```
+
+を実行した。
+
+Node.js 24 は対応していた。
+
+一方 TypeScript については、
+
+```text
+typescript   >=2.0.0 <7.0.0
+```
+
+と表示された。
+
+Personal OS は TypeScript 7.0.2 を利用している。
+
+その結果、
+
+```text
+x typescript
+x .ts
+x .tsx
+x .d.ts
+```
+
+となり、dependency-cruiser から TypeScript compiler が利用可能な transpiler として認識されなかった。
+
+さらに、
+
+```bash
+pnpm exec dependency-cruiser --init
+```
+
+を実行した。
+
+以下は正しく認識された。
+
+- monorepo
+- ESM package
+- packages directory
+- TypeScript configuration
+
+また、
+
+```text
+Also regard TypeScript dependencies that exist only before compilation?
+```
+
+についても `yes` を選択した。
+
+これは、
+
+```ts
+import type { Something } from "...";
+```
+
+のような compile 後に消える dependency も architecture coupling として扱いたかったためである。
+
+しかし initialization の最後で、
+
+```text
+TypeScript compiler not found
+```
+
+という warning が表示された。
+
+これは TypeScript 自体が repository に存在しないという意味ではなく、dependency-cruiser が対応している TypeScript version range に 7.0.2 が含まれていないためだった。
+
+## TypeScript を下げる案
+
+dependency-cruiser を利用するため、
+
+```text
+TypeScript 7
+↓
+TypeScript 6
+```
+
+へ downgrade する案も考えた。
+
+ただし Personal OS ではすでに TypeScript 7 を toolchain の一部として利用している。
+
+Architecture checker を導入するためだけに primary language toolchain を過去 version へ合わせるのは、
+
+```text
+project toolchain
+  ↓
+architecture tool
+```
+
+ではなく、
+
+```text
+architecture tool
+  ↓
+project toolchain
+```
+
+に設計判断が引っ張られているように感じた。
+
+これは望ましくない。
+
+また、正式な compatibility range 外の dependency-cruiser をそのまま使う方法も考えられるが、architecture enforcement の信頼性を高めるために導入する tool 自体を unsupported configuration で動かすのは矛盾している。
+
+そのため dependency-cruiser は v0.1 では採用しないことにした。
+
+## 既存 Toolchain の再確認
+
+dependency-cruiser が利用しにくいことが分かったため、既存の Vite+ / Oxlint toolchain で同じ目的を達成できないかを確認した。
+
+現在 Personal OS はすでに、
+
+```text
+Vite+
+  ↓
+Oxlint
+```
+
+を static analysis の中心にしている。
+
+Oxlint には architecture enforcement に利用できる rule が存在する。
+
+特に、
+
+```text
+no-restricted-imports
+```
+
+と、
+
+```text
+import/no-cycle
+```
+
+が今回の v0.1 requirements に合っていた。
+
+## Oxlint の `no-restricted-imports`
+
+`no-restricted-imports` を Domain package に対する override として設定する。
+
+概念的には、
+
+```text
+packages/domain/**
+        X
+        └── @personal-os/adapters-*
+```
+
+を表現する。
+
+package name 経由の dependency を禁止する。
+
+```ts
+import { Something } from "@personal-os/adapters-local";
+```
+
+type-only import も禁止する。
+
+```ts
+import type { Something } from "@personal-os/adapters-local";
+```
+
+さらに相対 import による迂回も禁止する。
+
+```ts
+import type { Something } from "../../adapters-local/src/something";
+```
+
+実際の configuration は概ね以下の形になる。
+
+```ts
+{
+  files: ["packages/domain/**/*.ts"],
+  rules: {
+    "no-restricted-imports": [
+      "error",
+      {
+        patterns: [
+          {
+            group: ["@personal-os/adapters-*"],
+            message:
+              "Domain must not depend on infrastructure adapters.",
+          },
+          {
+            regex:
+              "^(\\.\\./)+(packages/)?adapters-[^/]+(/|$)",
+            message:
+              "Domain must not bypass package boundaries with relative imports.",
+          },
+        ],
+      },
+    ],
+  },
+}
+```
+
+これにより、Domain layer から concrete adapter implementation への dependency を static lint error として扱える。
+
+## Circular Dependency
+
+Architecture violation は layer crossing だけではない。
+
+たとえば、
+
+```text
+A → B
+↑   ↓
+└── C
+```
+
+のような cycle も dependency graph を理解しにくくする。
 
 そのため、
 
-> 専用 tool がすでに解決している問題を repository 固有の test infrastructure として再実装しない
-
-という判断を重視する。
-
-## dependency-cruiser を利用する場合の役割
-
-dependency-cruiser の configuration を architecture dependency rule の Source of Truth とする。
-
-概念的には以下のような rule を宣言する。
-
 ```text
-from:
-  packages/domain/**
-
-must not depend on:
-  packages/adapters-*/**
+import/no-cycle
 ```
 
-将来的には、必要に応じて以下のような rule に拡張できる。
+も有効にする。
 
-```text
-domain
-  X→ application
-  X→ adapters
-  X→ apps
+Personal OS では type-only dependency も architecture coupling と考えるため、
 
-application
-  → domain
-  → ports
-  X→ concrete adapters
-
-adapters
-  → domain
-  → ports
-
-apps
-  → application
-  → adapters
+```ts
+ignoreTypes: false;
 ```
 
-これにより architecture dependency を単なる documentation ではなく、実際の dependency graph に対する executable constraint として扱える。
+とする。
 
-## Test と Architecture Check を分離する
+概念的には、
 
-architecture dependency check は `vp test` の一部として扱うのではなく、独立した repository check とする。
+```ts
+"import/no-cycle": [
+  "error",
+  {
+    ignoreTypes: false,
+  },
+]
+```
 
-たとえば、
+となる。
+
+## Oxlint を選ぶ理由
+
+Oxlint を採用することで、
+
+```text
+Vite+
+└── Oxlint
+    ├── normal lint rules
+    ├── TypeScript related checks
+    ├── architecture import restrictions
+    └── circular dependency checks
+```
+
+という構造になる。
+
+dependency-cruiser を追加する場合に必要だった、
+
+```text
+dependency-cruiser dependency
+dependency-cruiser config
+pnpm check:arch
+additional CI step
+```
+
+が不要になる。
+
+つまり architecture enforcement のためだけに別の static-analysis pipeline を作らずに済む。
+
+これは既存の Vite+ toolchain を統一的な入口として保つという Personal OS の方針とも整合する。
+
+## `vp test` ではなく `vp check`
+
+最初に感じていた、
+
+> architecture rule を毎 test 検証するのは責務として変ではないか
+
+という違和感も、Oxlintを採用することで解消された。
+
+構造は、
 
 ```text
 vp check
-  → format
-  → lint
-  → type check
-
-pnpm check:arch
-  → dependency-cruiser
+├── static lint
+├── type-related checks
+├── architecture boundary enforcement
+└── cycle detection
 
 vp test
-  → unit test
-  → integration test
+├── unit test
+└── integration test
 ```
 
-のように責務を分離する。
+となる。
 
-将来的に Vite Task 等を利用して一つの上位 command にまとめることはできるが、内部的な責務まで同一視する必要はない。
+architecture dependency は static structure なので `vp check` が担当する。
 
-## Git Hook と CI の役割
+behavior は `vp test` が担当する。
 
-architecture violation は、できるだけ開発者が早い段階で検出できることが望ましい。
+この分離はかなり自然である。
 
-そのため local development では Git hook から architecture check を実行する。
+## CI との統合
 
-ただし Git hook だけを enforcement mechanism としてはいけない。
-
-Git hook は、
+Personal OS の CI はすでに、
 
 ```text
-git commit / git push
-    ↓
-architecture check
-    ↓
-違反を早期に通知
+vp check
+vp test
 ```
 
-という developer feedback mechanism である。
+を実行している。
 
-一方、CI は、
+したがって architecture enforcement を Oxlint に追加すると、CI pipeline を別途増やさなくても、そのまま architecture violation が CI failure になる。
+
+構造は、
 
 ```text
-pull request
-    ↓
-architecture check
-    ↓
-違反があれば merge を失敗させる
+vite.config.ts
+      ↓
+Oxlint architecture rules
+      ↓
+vp check
+      ↓
+GitHub Actions
+      ↓
+merge gate
 ```
 
-という authoritative enforcement mechanism とする。
+となる。
 
-Git hook は `--no-verify` 等で回避できるため、architecture rule の保証は CI 側で行う。
+これは local と CI で同じ static-analysis command を利用できるという利点もある。
 
-したがって、
+## Negative Test による確認
+
+configuration を追加しただけでは、本当に機能しているかは分からない。
+
+特に現時点では Domain package に実コードがほとんど存在しないため、
 
 ```text
-dependency-cruiser config
-        ↓
-architecture rule の Source of Truth
-
-pnpm check:arch
-        ↓
-共通実行 command
-
-Git hook
-        ↓
-高速な local feedback
-
-CI
-        ↓
-必須 enforcement
+rule が正しいから green
 ```
 
-という構成を目指す。
-
-## pre-commit と pre-push の選択
-
-architecture check を `pre-commit` と `pre-push` のどちらで実行するかは、実行時間によって判断する。
-
-repository が小さいうちは dependency-cruiser の解析時間も短いため、`pre-commit` で実行しても開発体験を大きく損なわない可能性が高い。
-
-一方、repository が成長し解析時間が長くなった場合、毎 commit ごとに全 dependency graph を解析するのは開発の妨げになる。
-
-その場合は、
+なのか、
 
 ```text
-pre-commit
-  → formatter / lint など高速な処理
-
-pre-push
-  → architecture check
-  → 必要に応じて test
-
-CI
-  → 全ての必須 check
+解析対象がないから green
 ```
 
-のように移行する。
+なのかを区別する必要がある。
 
-この判断は固定的な思想ではなく、実際の実行時間を測定して決める。
+そこで一時的に、
 
-たとえば、
+```text
+packages/domain
+    ↓
+packages/adapters-local
+```
+
+という禁止 dependency を作成した。
+
+relative TypeScript import を用いて意図的に Domain から adapter へ依存させた状態で、
 
 ```bash
-time pnpm check:arch
+vp check
 ```
 
-を利用し、local feedback と実行コストのバランスを確認する。
+を実行した。
 
-## package.json Dependency との違い
+その結果 `vp check` は期待どおり失敗した。
 
-dependency-cruiser が主に解析するのは、source code 上に実際に存在する module dependency である。
+その後、temporary violation を削除すると再び check が成功した。
 
-一方で、
+これにより、
+
+> architecture rule が実際に enforcement として機能している
+
+ことを確認できた。
+
+## package.json Dependency は別問題
+
+Oxlint の `no-restricted-imports` は source code 上の dependency を検査する。
+
+一方、
 
 ```json
 {
@@ -655,35 +684,173 @@ dependency-cruiser が主に解析するのは、source code 上に実際に存�
 }
 ```
 
-のように `package.json` に dependency を宣言したものの、source code からまだ import していない場合は別の問題になる。
+のように `package.json` に dependency を追加しただけで、source code ではまだ import していない場合は別の問題になる。
 
-そのため、長期的には architecture enforcement を、
+したがって、将来的には、
 
 ```text
 Architecture Enforcement
-├── dependency-cruiser
-│   └── source / module dependency graph
+├── source dependency
+│   └── Oxlint
 │
-└── manifest validation
-    └── package.json dependency declarations
+└── package manifest dependency
+    └── future validation
 ```
 
-の二層として考える余地がある。
+の二層になる可能性がある。
 
-ただし v0.1 では、まず実際の source dependency direction を dependency-cruiser で守ることを優先し、manifest validation は必要性が明確になった段階で追加する。
+v0.1 では source dependency direction を優先して enforce する。
 
-## 現時点での結論
+manifest validation は、package dependency graph が実際に複雑になった段階で追加を検討する。
 
-ENV-058 の比較を踏まえ、v0.1 では dependency-cruiser を architecture dependency enforcement に利用する方針が最も自然だと考える。
+## 現時点での Architecture Enforcement
 
-理由は以下である。
+v0.1 の構造は以下とする。
 
-- architecture dependency は runtime behavior ではなく static structure の問題である
-- dependency graph analysis を自作する必要がない
-- architecture rule を宣言的に表現できる
-- circular dependency などへ自然に拡張できる
-- package 数が増えても同じ仕組みを利用できる
-- Git hook と CI の双方から同じ command を実行できる
-- unit / integration test と architecture validation の責務を分離できる
+```text
+Source Code
+    ↓
+Oxlint
+├── no-restricted-imports
+│   └── Domain → Adapter を禁止
+│
+└── import/no-cycle
+    └── circular dependency を禁止
+    ↓
+vp check
+    ↓
+CI
+```
 
-正式な採用判断とその consequences は ADR-0002 に記録する。
+architecture rule の Source of Truth は Vite+ / Oxlint configuration となる。
+
+## dependency-cruiser を試したことの意味
+
+dependency-cruiser を一度選びかけたこと自体は無駄ではなかった。
+
+むしろ、
+
+```text
+architecture dependency
+    ↓
+runtime test ではなく static analysis
+```
+
+という問題の性質を明確にできた。
+
+さらに実際に tool を導入して、
+
+```text
+dependency-cruiser
+    ↓
+TypeScript 7 compatibility problem
+```
+
+を確認したことで、
+
+```text
+既存 Oxlint で必要十分な enforcement が可能か
+```
+
+という次の問いにつながった。
+
+最終的に追加 tool を使わない結論になったが、
+
+```text
+何も検討せず既存toolを使った
+```
+
+のではなく、
+
+```text
+専用toolを比較
+↓
+実際に導入
+↓
+compatibilityを確認
+↓
+既存toolchainを再評価
+↓
+より単純な構成へ戻した
+```
+
+という意思決定になった。
+
+この過程は ADR に残す価値がある。
+
+## 今回学んだこと
+
+最も重要なのは、
+
+```text
+monorepo
+≠
+package dependency
+≠
+architecture rule
+≠
+architecture enforcement
+```
+
+という区別である。
+
+また、
+
+```text
+architecture enforcement
+```
+
+は必ずしも専用architecture toolを導入することを意味しない。
+
+必要なのは、
+
+> 守りたい invariant を、十分信頼できる方法で機械的に検証すること
+
+である。
+
+v0.1 の Personal OS では、既存の Oxlint がその役割を十分に担える。
+
+新しい tool を追加することそのものに価値があるわけではない。
+
+既存toolchainで必要な invariant を明確かつ安全に enforce できるなら、その方が構成は単純になる。
+
+## 将来再検討する条件
+
+現在の Oxlint-based enforcement は v0.1 の規模には適している。
+
+ただし以下の場合には再検討する。
+
+- package 数が大幅に増えた
+- allowed dependency matrix が複雑になった
+- bounded context 間の制約が増えた
+- manifest dependency も同時に検証したくなった
+- architecture graph を可視化したくなった
+- cross-package rule が lint override では管理しにくくなった
+- dependency-cruiser が TypeScript 7 に正式対応した
+- Nx 等の project graph が別の理由でも必要になった
+
+その場合でも、
+
+```text
+domain must not depend on concrete adapters
+```
+
+という architecture invariant 自体は維持する。
+
+変更されるのは enforcement tool であり、architecture rule そのものではない。
+
+## 関連 Architecture
+
+- `docs/architecture/dependency-boundaries.md`
+
+## 関連 ADR
+
+- `ADR-0002: Enforce architecture dependency boundaries with Oxlint`
+
+## References
+
+- Oxlint documentation
+- Vite+ documentation
+- dependency-cruiser documentation
+- pnpm workspace documentation
+- Personal OS architecture documentation

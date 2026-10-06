@@ -10,3 +10,4 @@ coverage
 runtime/
 vault/
 .DS_Store
+.vitest/
