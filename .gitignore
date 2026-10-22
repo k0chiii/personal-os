@@ -7,6 +7,14 @@ coverage
 *.db
 *.db-shm
 *.db-wal
+.personal-os/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 runtime/
 vault/
 .DS_Store
+.vitest/
+.aws-sam/
+__pycache__/
+*.pyc

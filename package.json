@@ -1,12 +1,29 @@
 {
   "name": "personal-os",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.1",
   "private": true,
   "type": "module",
-  "scripts": {},
+  "scripts": {
+    "check": "vp check",
+    "test": "vp test --run",
+    "build": "pnpm --filter @personal-os/web build",
+    "personal": "node apps/cli/src/main.ts",
+    "mcp": "node apps/mcp-server/src/main.ts",
+    "aws:validate": "pnpm --filter @personal-os/aws-lambda validate",
+    "aws:build": "pnpm --filter @personal-os/aws-lambda build",
+    "aws:deploy": "pnpm --filter @personal-os/aws-lambda deploy",
+    "aws:contract": "pnpm --filter @personal-os/aws-lambda test:live",
+    "cloud:transfer": "pnpm --filter @personal-os/cloud-transfer transfer"
+  },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/lib-dynamodb": "^3.1152.0",
+    "@types/node": "^24.10.0",
+    "esbuild": "^0.28.2",
+    "miniflare": "5.20261012.1-beta",
+    "temporal-polyfill": "^1.0.5",
     "typescript": "^7.0.2",
-    "vite-plus": "0.3.0"
+    "vite-plus": "catalog:"
   },
   "packageManager": "pnpm@12.3.4"
 }

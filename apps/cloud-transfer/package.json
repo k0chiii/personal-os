@@ -1,0 +1,18 @@
+{
+  "name": "@personal-os/cloud-transfer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "transfer": "node src/main.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.922.0",
+    "@aws-sdk/client-s3": "^3.922.0",
+    "@aws-sdk/lib-dynamodb": "^3.922.0",
+    "@personal-os/adapters-aws": "workspace:*",
+    "@personal-os/adapters-cloudflare": "workspace:*",
+    "@personal-os/adapters-local": "workspace:*",
+    "@personal-os/application": "workspace:*"
+  }
+}

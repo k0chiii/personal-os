@@ -1,0 +1,13 @@
+{
+  "name": "@personal-os/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp build",
+    "dev": "vp dev"
+  },
+  "devDependencies": {
+    "vite-plus": "catalog:"
+  }
+}

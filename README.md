@@ -2,7 +2,7 @@
 
 > A local-first, model-agnostic personal knowledge and agent infrastructure for building an explainable, evolving computational model of a person.
 
-**Status:** Early development / v0.1
+**Status:** v1 candidate capabilities implemented; release approval and deployment pending
 **Primary language:** TypeScript
 **Scope:** Research, learning, and personal infrastructure
 
@@ -322,6 +322,7 @@ personal-os/
 │   ├── adapters-local/
 │   ├── adapters-openai/
 │   ├── adapters-ollama/
+│   ├── adapters-llama-cpp/
 │   ├── adapters-cloudflare/
 │   ├── adapters-aws/
 │   ├── retrieval/
@@ -358,7 +359,7 @@ The current direction for v0.1 is:
 | Remote LLM             | provider adapters, initially OpenAI    |
 | HTTP                   | Hono                                   |
 | Agent interoperability | MCP                                    |
-| Cloud target           | Cloudflare                             |
+| Cloud target           | Cloudflare / AWS                       |
 | Research / analysis    | Python                                 |
 
 These are **current decisions**, not permanent constraints.
@@ -496,7 +497,7 @@ For core architecture, being able to explain the implementation is considered pa
 ## Development status
 
 ```text
-v0.1 — in progress
+v1 candidate — implementation complete, operational release gates pending
 ```
 
 Current focus:
@@ -518,6 +519,187 @@ Environment
 ```
 
 The architecture is expected to change substantially while these ideas are tested in implementation.
+
+### Implemented product slices
+
+The Evidence-to-Assertion and Decision-to-Context slices are executable through the local CLI:
+
+```text
+Evidence import
+→ content-addressed raw storage
+→ Assertion Proposal
+→ human approve, edit, or reject
+→ append-only canonical event
+→ SQLite projection and FTS5 search
+→ provenance explanation
+→ temporal supersede/dispute/retract
+
+Decision + Outcome
+→ lexical/structured retrieval
+→ privacy- and time-bounded Context Pack
+→ Mock/Ollama/llama.cpp/OpenAI provider routing
+→ evidence-grounded simulation or abstention
+```
+
+The local state directory defaults to `.personal-os/` and is excluded from version control. Set
+`PERSONAL_OS_HOME` to keep runtime state elsewhere.
+
+```bash
+# Generate a UUIDv7 Person identifier for the slice.
+pnpm personal id
+
+# Import source material.
+pnpm personal evidence import note.md \
+  --source-type markdown \
+  --privacy P1 \
+  --actor owner \
+  --reason "Import an explicit preference statement"
+
+# Create a Proposal. This does not update canonical Assertions.
+pnpm personal preference propose \
+  --subject <person-uuidv7> \
+  --value "TypeScript" \
+  --evidence <evidence-uuidv7> \
+  --valid-from 2026-09-04T00:00:00Z \
+  --privacy P1 \
+  --actor archivist \
+  --reason "Extract an explicit preference candidate"
+
+# Only a human review creates the canonical Assertion.
+pnpm personal proposal approve <proposal-uuidv7> \
+  --actor owner \
+  --reason "The source explicitly supports this preference"
+
+pnpm personal search TypeScript --privacy P1
+pnpm personal explain <assertion-uuidv7>
+pnpm personal current --privacy P0,P1
+pnpm personal profile --privacy P0,P1
+
+# Preserve the old time slice and create a new approved Preference.
+pnpm personal assertion supersede <assertion-uuidv7> \
+  --value "Rust" \
+  --evidence <new-evidence-uuidv7> \
+  --valid-from 2027-01-01T00:00:00Z \
+  --actor owner \
+  --reason "Explicit preference change"
+
+# Portable canonical backup and empty-store restore.
+pnpm personal backup create backup.json
+# PERSONAL_OS_HOME=/path/to/empty-state pnpm personal backup restore backup.json
+
+# Authenticated off-device backup. Keep this key separate from the backup.
+export PERSONAL_OS_BACKUP_KEY='<base64-encoded-32-byte-key>'
+pnpm personal backup create-encrypted backup.pos
+
+# Import a directory in cursor-addressed pages.
+pnpm personal source sync ./notes --privacy P2 --actor owner --reason "Scheduled sync"
+
+# Propose a Goal through the same human-review lifecycle.
+pnpm personal intent propose \
+  --kind goal \
+  --subject <person-uuidv7> \
+  --value "Operate the knowledge base reliably" \
+  --evidence <evidence-uuidv7> \
+  --valid-from 2026-10-20T00:00:00Z \
+  --privacy P1
+
+pnpm personal verify
+pnpm personal doctor
+pnpm personal rebuild
+```
+
+The framework-neutral HTTP handler also exposes proposal review, generic intents, an audit timeline,
+retention execution, and selective Evidence purge. The evaluation package contains the original 100
+v0.1 cases plus 60 v1 cases and retrieval MRR/Recall@k metrics. The static web console in `apps/web`
+provides review, search, current-state, and timeline views.
+
+### MCP stdio
+
+The MCP server exposes read-only Personal OS tools for current state, search, provenance, Context
+Pack construction, and local Ollama-backed decision simulation. It uses the same local state as the
+CLI.
+
+```bash
+PERSONAL_OS_HOME=/path/to/state pnpm mcp
+```
+
+Set `OLLAMA_MODEL` and, when needed, `OLLAMA_ENDPOINT` for the simulation tool. P3 requests remain
+local because the MCP composition contains only the local Ollama provider.
+
+### Cloudflare Worker
+
+`apps/worker` is a deployable Worker composition with D1 Event Store/Projection, R2 Raw Evidence,
+same-origin web assets, Cloudflare Access enforcement, native rate limiting, Vectorize-backed hybrid
+retrieval, and optional OpenAI simulation. Local and Cloudflare adapters run the same runtime
+contract suite.
+
+```bash
+cd apps/worker
+pnpm exec wrangler d1 create personal-os
+pnpm exec wrangler r2 bucket create personal-os-evidence
+pnpm exec wrangler vectorize create personal-os-assertions --dimensions=256 --metric=cosine
+# Put the returned D1 database ID in wrangler.jsonc.
+pnpm db:migrate:local
+pnpm dev
+```
+
+For remote simulation, store the API key as a Worker secret. Without the secret, simulation returns
+`simulation_unavailable`; storage, search, provenance, and Context APIs remain available.
+
+```bash
+pnpm exec wrangler secret put OPENAI_API_KEY
+pnpm db:migrate:remote
+pnpm deploy
+```
+
+### AWS Lambda
+
+`apps/aws-lambda` is an AWS composition with API Gateway HTTP API, Cognito JWT authorization,
+DynamoDB Event Store/Projection, S3 Raw Evidence, optional OpenAI simulation through SSM Parameter
+Store, DynamoDB-backed exact vector retrieval, and DynamoDB Agent Run recording. The application
+depends on the same event, projection, raw evidence, retrieval, secret, and authentication contracts
+in both cloud composition roots.
+
+The SAM template also enables DynamoDB point-in-time recovery, retained canonical storage,
+application and API Gateway rate limits, CloudWatch error/throttle alarms, an SNS alert topic, and
+an optional monthly AWS Budget alert.
+
+```bash
+# Validate and build without changing an AWS account.
+pnpm aws:validate
+pnpm aws:build
+
+# Optional: exercise real DynamoDB and S3 using disposable contract resources.
+# See docs/operations/aws-runbook.md before running this write test.
+
+# Configure production-specific values before deployment.
+pnpm aws:deploy -- \
+  --parameter-overrides \
+    AllowedOrigin=https://personal.example.com \
+    AlertEmail=owner@example.com \
+    MonthlyBudgetUsd=10 \
+    OpenAiApiKeyParameterName=/personal-os/openai-api-key
+```
+
+The default region is `ap-northeast-1`. Deployment requires an AWS credential chain and creates
+billable resources, so it is an explicit operator action. Confirm the SNS subscription email and
+create a Cognito user after the first deployment. `GET /health` is public for uptime checks; all
+other routes require the Cognito-issued JWT.
+
+Implementation coverage and deliberate v0.1 deferrals are tracked in
+[`docs/architecture/v0.1-requirement-coverage.md`](docs/architecture/v0.1-requirement-coverage.md).
+The proposed path from this baseline to v1 is tracked in
+[`docs/architecture/v1-readiness.md`](docs/architecture/v1-readiness.md).
+Deployment, rollback, and recovery procedures are in
+[`docs/operations/aws-runbook.md`](docs/operations/aws-runbook.md) and
+[`docs/operations/recovery-drill.md`](docs/operations/recovery-drill.md).
+
+日本語の実運用手順は、
+[`AWSセットアップ`](docs/operations/aws-setup.ja.md)、
+[`Cloudflareセットアップ`](docs/operations/cloudflare-setup.ja.md)、
+[`AWS / Cloudflare移行`](docs/operations/cloud-migration.ja.md) を参照してください。クラウド間の
+移行には、暗号化された正規バックアップを直接DynamoDB/S3またはD1/R2へ読み書きする
+`rtk pnpm cloud:transfer` を使用します。
 
 ---
 

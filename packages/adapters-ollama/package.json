@@ -1,0 +1,12 @@
+{
+  "name": "@personal-os/adapters-ollama",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@personal-os/ports": "workspace:*"
+  }
+}
