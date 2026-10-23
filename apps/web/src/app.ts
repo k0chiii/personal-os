@@ -1,3 +1,5 @@
+import { idAfterRemoval, inboxCommand, movedId, type ReviewAction } from "./inbox.ts";
+
 type JsonRecord = Record<string, unknown>;
 
 function byId(id: string): HTMLElement {
@@ -120,32 +122,193 @@ function proposalsResponse(value: unknown): Proposal[] {
   });
 }
 
-async function loadProposals(): Promise<void> {
-  const proposals = proposalsResponse(await api("/v1/proposals?status=pending"));
-  byId("pending-count").textContent = String(proposals.length);
-  byId("nav-pending-count").textContent = String(proposals.length);
-  byId("proposal-list").innerHTML =
-    proposals.length === 0
-      ? '<div class="empty-state"><div><span class="empty-state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7"/><circle cx="12" cy="12" r="9"/></svg></span><h3>すべて確認済みです</h3><p>新しい提案が届くと、ここに根拠とともに表示されます。</p></div></div>'
-      : proposals
-          .map(
-            (proposal) =>
-              `<article class="card"><div><p><span class="badge">${escapeHtml(proposal.assertion.kind)}</span><span class="badge">${escapeHtml(proposal.assertion.privacy)}</span></p><h3>${escapeHtml(proposal.assertion.object)}</h3><p class="meta">根拠 ${proposal.assertion.evidenceIds.length} 件 ・ ${escapeHtml(new Date(proposal.createdAt).toLocaleString("ja-JP"))}</p></div><div class="actions"><button data-review="approve" data-id="${escapeHtml(proposal.id)}">承認</button><button class="reject" data-review="reject" data-id="${escapeHtml(proposal.id)}">却下</button></div></article>`,
-          )
-          .join("");
+const ACTION_LABELS: Readonly<Record<ReviewAction, string>> = { approve: "承認", reject: "却下" };
+const REASON_PLACEHOLDERS: Readonly<Record<ReviewAction, string>> = {
+  approve: "例：本人の発言と一致している",
+  reject: "例：根拠と内容が食い違っている",
+};
+const REASON_HINT = "Enter で確定 ・ Esc で取り消し";
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+let proposals: Proposal[] = [];
+
+function setPendingCount(count: number): void {
+  for (const id of ["pending-count", "nav-pending-count", "inbox-count"]) {
+    const element = byId(id);
+    if (element.textContent === String(count)) continue;
+    element.textContent = String(count);
+    if (reducedMotion.matches) continue;
+    element.animate(
+      [
+        { transform: "scale(1)" },
+        { transform: "scale(1.18)", offset: 0.4 },
+        { transform: "scale(1)" },
+      ],
+      { duration: 320, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+    );
+  }
 }
 
-async function review(id: string, action: "approve" | "reject"): Promise<void> {
-  const actionLabel = action === "approve" ? "承認" : "却下";
-  const reason = window.prompt(`${actionLabel}する理由を入力してください。`)?.trim();
-  if (!reason) return;
-  await api(`/v1/proposals/${encodeURIComponent(id)}/${action}`, {
-    method: "POST",
-    body: JSON.stringify({ actor: "web-owner", reason }),
-  });
-  toast(`提案を${actionLabel}しました。`);
-  await loadProposals();
+function proposalCard(proposal: Proposal, index: number): string {
+  const id = escapeHtml(proposal.id);
+  return `<article class="card inbox-card" tabindex="0" data-proposal-id="${id}" style="--i: ${index}" aria-labelledby="proposal-title-${id}" aria-describedby="review-shortcuts"><div class="card-body"><p class="card-tags"><span class="badge badge-kind">${escapeHtml(proposal.assertion.kind)}</span><span class="badge">${escapeHtml(proposal.assertion.privacy)}</span></p><h3 id="proposal-title-${id}">${escapeHtml(proposal.assertion.object)}</h3><p class="meta">根拠 ${proposal.assertion.evidenceIds.length} 件 ・ ${escapeHtml(new Date(proposal.createdAt).toLocaleString("ja-JP"))}</p></div><div class="actions"><button type="button" data-compose="approve">${ACTION_LABELS.approve}<kbd>A</kbd></button><button type="button" class="reject" data-compose="reject">${ACTION_LABELS.reject}<kbd>R</kbd></button></div></article>`;
 }
+
+function renderProposals(): void {
+  setPendingCount(proposals.length);
+  byId("review-shortcuts").hidden = proposals.length === 0;
+  byId("proposal-list").innerHTML =
+    proposals.length === 0
+      ? '<div class="empty-state inbox-empty"><div><span class="empty-state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7"/><circle cx="12" cy="12" r="9"/></svg></span><h3>すべて確認済みです</h3><p>次は新しい Evidence を取り込みましょう。取り込んだ Evidence からエージェントや CLI が提案を作ると、根拠の件数とともにここに並びます。</p><code class="empty-command">pnpm personal evidence import &lt;file&gt;</code></div></div>'
+      : proposals.map(proposalCard).join("");
+}
+
+async function loadProposals(): Promise<void> {
+  proposals = proposalsResponse(await api("/v1/proposals?status=pending"));
+  renderProposals();
+}
+
+function cardById(id: string): HTMLElement | null {
+  return byId("proposal-list").querySelector<HTMLElement>(
+    `.inbox-card[data-proposal-id="${CSS.escape(id)}"]`,
+  );
+}
+
+function focusCard(card: HTMLElement): void {
+  card.focus();
+  card.scrollIntoView({ block: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth" });
+}
+
+function closeComposer(restoreFocus: boolean): void {
+  const form = byId("proposal-list").querySelector<HTMLFormElement>(".reason-form");
+  if (form === null) return;
+  const card = form.closest<HTMLElement>(".inbox-card");
+  form.remove();
+  card?.classList.remove("composing--reject");
+  if (restoreFocus && card !== null) focusCard(card);
+}
+
+function openComposer(card: HTMLElement, action: ReviewAction): void {
+  closeComposer(false);
+  const label = ACTION_LABELS[action];
+  card.classList.toggle("composing--reject", action === "reject");
+  card.insertAdjacentHTML(
+    "beforeend",
+    `<form class="reason-form" data-action="${action}" novalidate><label for="reason-input">${label}する理由</label><div class="reason-row"><input id="reason-input" name="reason" autocomplete="off" placeholder="${REASON_PLACEHOLDERS[action]}" aria-describedby="reason-hint" /><button type="submit" class="confirm confirm--${action}">${label}を確定</button><button type="button" class="secondary" data-cancel-review>キャンセル</button></div><p id="reason-hint" class="reason-hint">${REASON_HINT}</p></form>`,
+  );
+  card.querySelector<HTMLInputElement>("#reason-input")?.focus();
+}
+
+async function leave(card: HTMLElement): Promise<void> {
+  card.style.height = `${card.offsetHeight}px`;
+  card.classList.add("leaving");
+  await Promise.allSettled(card.getAnimations().map((animation) => animation.finished));
+}
+
+async function dismissCard(card: HTMLElement, id: string): Promise<void> {
+  const nextId = idAfterRemoval(
+    proposals.map((proposal) => proposal.id),
+    id,
+  );
+  proposals = proposals.filter((proposal) => proposal.id !== id);
+  setPendingCount(proposals.length);
+  const next = nextId === null ? null : cardById(nextId);
+  if (next !== null) focusCard(next);
+  await leave(card);
+  card.remove();
+  if (proposals.length === 0) {
+    renderProposals();
+    byId("review-title").focus();
+  }
+}
+
+async function submitReview(form: HTMLFormElement): Promise<void> {
+  const card = form.closest<HTMLElement>(".inbox-card");
+  const id = card?.dataset.proposalId;
+  const action = form.dataset.action;
+  if (card === null || id === undefined || (action !== "approve" && action !== "reject")) return;
+  const input = form.querySelector<HTMLInputElement>("#reason-input");
+  const hint = form.querySelector<HTMLElement>("#reason-hint");
+  if (input === null || hint === null) return;
+  const reason = input.value.trim();
+  if (reason.length === 0) {
+    input.setAttribute("aria-invalid", "true");
+    hint.textContent = "理由を入力してください。";
+    hint.classList.add("error");
+    input.focus();
+    return;
+  }
+  const controls = form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button");
+  controls.forEach((control) => (control.disabled = true));
+  card.setAttribute("aria-busy", "true");
+  try {
+    await api(`/v1/proposals/${encodeURIComponent(id)}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({ actor: "web-owner", reason }),
+    });
+  } catch (error: unknown) {
+    controls.forEach((control) => (control.disabled = false));
+    card.removeAttribute("aria-busy");
+    hint.textContent = errorMessage(error);
+    hint.classList.add("error");
+    input.focus();
+    return;
+  }
+  toast(`提案を${ACTION_LABELS[action]}しました。`);
+  void loadTimeline().catch(() => undefined);
+  void loadState().catch(() => undefined);
+  await dismissCard(card, id);
+}
+
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || !form.classList.contains("reason-form")) return;
+  event.preventDefault();
+  void submitReview(form).catch((error: unknown) => toast(errorMessage(error)));
+});
+
+document.addEventListener("input", (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || input.id !== "reason-input") return;
+  if (input.getAttribute("aria-invalid") === null) return;
+  input.removeAttribute("aria-invalid");
+  const hint = byId("reason-hint");
+  hint.textContent = REASON_HINT;
+  hint.classList.remove("error");
+});
+
+document.addEventListener("keydown", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (event.key === "Escape" && target.closest(".reason-form") !== null) {
+    event.preventDefault();
+    closeComposer(true);
+    return;
+  }
+  if (target.closest("input, textarea, select, [contenteditable]") !== null) return;
+  if (byId("review-view").classList.contains("hidden")) return;
+  const command = inboxCommand(event);
+  if (command === null) return;
+  const card = target.closest<HTMLElement>(".inbox-card");
+  if (command.type === "compose") {
+    if (card === null) return;
+    event.preventDefault();
+    openComposer(card, command.action);
+    return;
+  }
+  const fromPage =
+    target === document.body || target === byId("main") || target.closest("#review-view") !== null;
+  if (card === null && (!fromPage || event.key.startsWith("Arrow"))) return;
+  const nextId = movedId(
+    proposals.map((proposal) => proposal.id),
+    card?.dataset.proposalId ?? null,
+    command.delta,
+  );
+  const next = nextId === null ? null : cardById(nextId);
+  if (next === null) return;
+  event.preventDefault();
+  focusCard(next);
+});
 
 interface TimelineEntry {
   operation: string;
@@ -268,11 +431,10 @@ document.addEventListener("click", (event) => {
       void loadTimeline().catch((error: unknown) => toast(errorMessage(error)));
     if (view === "state") void loadState().catch((error: unknown) => toast(errorMessage(error)));
   }
-  const reviewAction = target.dataset.review;
-  const id = target.dataset.id;
-  if ((reviewAction === "approve" || reviewAction === "reject") && id !== undefined) {
-    void review(id, reviewAction).catch((error: unknown) => toast(errorMessage(error)));
-  }
+  const compose = target.dataset.compose;
+  const card = target.closest<HTMLElement>(".inbox-card");
+  if ((compose === "approve" || compose === "reject") && card !== null) openComposer(card, compose);
+  if (target.dataset.cancelReview !== undefined) closeComposer(true);
   const refresh = target.dataset.refresh;
   if (refresh === "review")
     void loadProposals().catch((error: unknown) => toast(errorMessage(error)));

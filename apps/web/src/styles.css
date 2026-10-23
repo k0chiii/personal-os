@@ -119,8 +119,9 @@ svg {
   display: block;
 }
 .brand strong {
-  font-size: 0.95rem;
-  letter-spacing: -0.01em;
+  font-size: 1.35rem;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 .brand small {
   margin-top: 0.1rem;
@@ -390,6 +391,7 @@ h1 {
 }
 .status-card strong {
   margin-top: 0.08rem;
+  transform-origin: left center;
   font-size: 1.45rem;
   line-height: 1;
   letter-spacing: -0.04em;
@@ -523,6 +525,182 @@ button.secondary {
   color: #7c4d42;
   border-color: #ead7d2;
   background: #fff9f7;
+}
+.main-content:focus,
+#review-title:focus {
+  outline: none;
+}
+.inbox-count {
+  display: inline-grid;
+  min-width: 1.6rem;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  place-items: center;
+  color: #11130f;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  vertical-align: 0.15em;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.shortcut-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: -0.4rem 0 0.8rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.shortcut-hint[hidden] {
+  display: none;
+}
+kbd {
+  display: inline-grid;
+  min-width: 1.25rem;
+  margin-right: 0.2rem;
+  padding: 0.05rem 0.3rem;
+  place-items: center;
+  color: #4f574e;
+  font:
+    600 0.62rem/1.4 ui-monospace,
+    monospace;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 0.3rem;
+  background: var(--paper);
+}
+.inbox-card {
+  outline: none;
+  animation: card-enter 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 35ms);
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+.inbox-card:focus-within {
+  border-color: #8aaa68;
+  box-shadow: 0 0 0 3px rgba(185, 242, 101, 0.35);
+}
+.inbox-card:focus-visible {
+  border-color: var(--accent-dark);
+  box-shadow: 0 0 0 3px rgba(185, 242, 101, 0.55);
+}
+.inbox-card.composing--reject {
+  border-color: #d9a99c;
+  box-shadow: 0 0 0 3px rgba(185, 78, 59, 0.12);
+}
+.inbox-card[aria-busy="true"] {
+  opacity: 0.7;
+}
+.inbox-card.leaving {
+  overflow: hidden;
+  pointer-events: none;
+  animation: card-leave 0.34s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes card-leave {
+  40% {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+  to {
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+}
+.actions button kbd {
+  margin: 0 0 0 0.45rem;
+  color: inherit;
+  border-color: rgba(23, 26, 21, 0.25);
+  background: rgba(255, 255, 255, 0.45);
+}
+.reason-form {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid #edf0eb;
+  animation: card-enter 0.2s ease both;
+}
+.reason-form label {
+  color: #60675f;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+.reason-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.45rem;
+}
+.reason-row input {
+  min-width: 0;
+  padding: 0.6rem 0.8rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+  border: 1px solid #d5dad3;
+  border-radius: 0.5rem;
+  outline: none;
+  background: #fafbf9;
+}
+.reason-row input:focus {
+  border-color: #8aaa68;
+  box-shadow: 0 0 0 3px rgba(185, 242, 101, 0.18);
+}
+.reason-row input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.reason-row button {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 0.5rem;
+}
+.reason-row button:disabled {
+  cursor: progress;
+}
+.confirm--approve {
+  color: #171a15;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+}
+.confirm--reject {
+  color: white;
+  border: 1px solid var(--danger);
+  background: var(--danger);
+}
+.reason-hint {
+  margin: 0;
+  color: var(--muted-2);
+  font-size: 0.64rem;
+}
+.reason-hint.error {
+  color: var(--danger);
+  font-weight: 600;
+}
+.empty-command {
+  display: inline-block;
+  margin-top: 0.9rem;
+  padding: 0.45rem 0.7rem;
+  color: #26351d;
+  font:
+    0.68rem/1.4 ui-monospace,
+    monospace;
+  border: 1px solid #b8d99a;
+  border-radius: 0.45rem;
+  background: #edf7e3;
+}
+.inbox-empty {
+  animation: card-enter 0.3s ease both;
 }
 .empty-state {
   display: grid;
@@ -860,6 +1038,16 @@ button.secondary {
   }
   .actions button {
     flex: 1;
+  }
+  .shortcut-hint,
+  .actions button kbd {
+    display: none;
+  }
+  .reason-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .reason-row input {
+    grid-column: 1 / -1;
   }
   .search-input-wrap {
     grid-template-columns: 1fr;
