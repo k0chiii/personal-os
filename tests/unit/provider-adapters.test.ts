@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { LlamaCppAdapter } from "../../packages/adapters-llama-cpp/src/index.ts";
 import { OpenAiAdapter } from "../../packages/adapters-openai/src/index.ts";
 import { OllamaAdapter } from "../../packages/adapters-ollama/src/index.ts";
+import { LlmUnavailable } from "../../packages/ports/src/index.ts";
 
 describe("LLM provider adapters", () => {
   it("maps an OpenAI Responses result to the shared GenerateResult", async () => {
@@ -116,4 +117,34 @@ describe("LLM provider adapters", () => {
       estimatedUsd: 0,
     });
   });
+
+  it.each([
+    [
+      "Ollama",
+      "http://127.0.0.1:11434/v1/chat/completions",
+      (endpoint: string, fetch: typeof globalThis.fetch) =>
+        new OllamaAdapter({ model: "local-test", endpoint, fetch }),
+    ],
+    [
+      "llama.cpp",
+      "http://127.0.0.1:8080/completion",
+      (endpoint: string, fetch: typeof globalThis.fetch) =>
+        new LlamaCppAdapter({ model: "local-gguf", endpoint, fetch }),
+    ],
+  ] as const)(
+    "rejects redirects from loopback %s endpoints without contacting the redirect target",
+    async (_name, endpoint, createAdapter) => {
+      const seen: string[] = [];
+      const adapter = createAdapter(endpoint, async (input, init) => {
+        seen.push(String(input));
+        expect(init?.redirect).toBe("error");
+        throw new TypeError("redirect mode is set to error");
+      });
+
+      await expect(
+        adapter.generate({ prompt: "restricted P3 prompt", privacy: ["P3"] }),
+      ).rejects.toBeInstanceOf(LlmUnavailable);
+      expect(seen).toEqual([endpoint]);
+    },
+  );
 });

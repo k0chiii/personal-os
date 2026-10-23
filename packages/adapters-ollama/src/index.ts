@@ -46,6 +46,7 @@ export class OllamaAdapter implements LlmPort {
       response = await this.#fetch(this.#endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
+        ...(this.capabilities.local ? { redirect: "error" as const } : {}),
         body: JSON.stringify({
           model: this.model,
           stream: false,

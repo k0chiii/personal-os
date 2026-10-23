@@ -46,6 +46,7 @@ export class LlamaCppAdapter implements LlmPort {
       response = await this.#fetch(this.#endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
+        ...(this.capabilities.local ? { redirect: "error" as const } : {}),
         body: JSON.stringify({
           prompt: [request.system, request.prompt]
             .filter((item) => item !== undefined)
