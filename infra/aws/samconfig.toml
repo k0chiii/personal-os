@@ -1,0 +1,19 @@
+version = 0.1
+
+[default.validate.parameters]
+lint = true
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+stack_name = "personal-os"
+resolve_s3 = true
+s3_prefix = "personal-os"
+region = "ap-northeast-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+fail_on_empty_changeset = false
+parameter_overrides = "LogRetentionDays=30 MonthlyBudgetUsd=10 RateLimitPerMinute=120 ApiThrottleRateLimit=10 ApiThrottleBurstLimit=20 AllowedOrigin=http://localhost:3000"
+tags = "Project=personal-os ManagedBy=aws-sam"

@@ -1,0 +1,52 @@
+{
+  "@context": {
+    "pos": "https://personal-os.dev/ontology/v0.1#",
+    "id": "@id",
+    "type": "@type",
+    "definition": "pos:definition",
+    "domain": { "@id": "pos:domain", "@type": "@id" },
+    "range": { "@id": "pos:range", "@type": "@id" }
+  },
+  "id": "https://personal-os.dev/ontology/v0.1",
+  "type": "pos:Ontology",
+  "definition": "Versioned semantic vocabulary for Personal OS v0.1; it is not the canonical persistence schema or the executable domain model.",
+  "@graph": [
+    { "id": "pos:Person", "type": "pos:Class", "definition": "The single person modeled by a Personal OS instance." },
+    { "id": "pos:Organization", "type": "pos:Class", "definition": "A coordinated social or legal group." },
+    { "id": "pos:Role", "type": "pos:Class", "definition": "A capacity held by a person in an organization or activity." },
+    { "id": "pos:Project", "type": "pos:Class", "definition": "A bounded activity intended to produce an outcome or artifact." },
+    { "id": "pos:Artifact", "type": "pos:Class", "definition": "An identifiable output created by an activity or project." },
+    { "id": "pos:ResearchTopic", "type": "pos:Class", "definition": "A subject of investigation or sustained inquiry." },
+    { "id": "pos:Technology", "type": "pos:Class", "definition": "A technical method, tool, platform, or material." },
+    { "id": "pos:Evidence", "type": "pos:Class", "definition": "Immutable source material whose content identity and provenance are retained." },
+    { "id": "pos:Observation", "type": "pos:Class", "definition": "A recorded interpretation of evidence before canonical assertion approval." },
+    { "id": "pos:Assertion", "type": "pos:Class", "definition": "A provenance-bearing claim with temporal validity and epistemic status." },
+    { "id": "pos:Preference", "type": "pos:Class", "definition": "A temporally scoped tendency to favor one object or condition." },
+    { "id": "pos:Goal", "type": "pos:Class", "definition": "A desired future state that may motivate decisions." },
+    { "id": "pos:Constraint", "type": "pos:Class", "definition": "A condition that limits acceptable actions or options." },
+    { "id": "pos:Decision", "type": "pos:Class", "definition": "A recorded selection among options, including rationale and contemporaneous state." },
+    { "id": "pos:Option", "type": "pos:Class", "definition": "A candidate course considered by a decision." },
+    { "id": "pos:Criterion", "type": "pos:Class", "definition": "A consideration used to evaluate decision options." },
+    { "id": "pos:Outcome", "type": "pos:Class", "definition": "An observed consequence associated with a decision." },
+
+    { "id": "pos:workedOn", "type": "pos:ObjectProperty", "definition": "Relates a person to a project on which they worked.", "domain": "pos:Person", "range": "pos:Project" },
+    { "id": "pos:created", "type": "pos:ObjectProperty", "definition": "Relates a person or project to an artifact it produced.", "domain": "pos:Project", "range": "pos:Artifact" },
+    { "id": "pos:used", "type": "pos:ObjectProperty", "definition": "Relates a project to a technology used in it.", "domain": "pos:Project", "range": "pos:Technology" },
+    { "id": "pos:interestedIn", "type": "pos:ObjectProperty", "definition": "Relates a person to a research topic of demonstrated interest.", "domain": "pos:Person", "range": "pos:ResearchTopic" },
+    { "id": "pos:about", "type": "pos:ObjectProperty", "definition": "Relates an assertion to the entity it describes.", "domain": "pos:Assertion", "range": "pos:Person" },
+    { "id": "pos:supports", "type": "pos:ObjectProperty", "definition": "Relates evidence to an assertion it supports.", "domain": "pos:Evidence", "range": "pos:Assertion" },
+    { "id": "pos:contradicts", "type": "pos:ObjectProperty", "definition": "Relates evidence or an assertion to an assertion it conflicts with.", "domain": "pos:Evidence", "range": "pos:Assertion" },
+    { "id": "pos:supersedes", "type": "pos:ObjectProperty", "definition": "Relates a newer assertion to the older assertion whose validity it closes.", "domain": "pos:Assertion", "range": "pos:Assertion" },
+    { "id": "pos:motivatedBy", "type": "pos:ObjectProperty", "definition": "Relates a decision to a goal or preference that motivated it.", "domain": "pos:Decision", "range": "pos:Goal" },
+    { "id": "pos:constrainedBy", "type": "pos:ObjectProperty", "definition": "Relates a decision to a limiting constraint.", "domain": "pos:Decision", "range": "pos:Constraint" },
+    { "id": "pos:chose", "type": "pos:ObjectProperty", "definition": "Relates a decision to its selected option.", "domain": "pos:Decision", "range": "pos:Option" },
+    { "id": "pos:resultedIn", "type": "pos:ObjectProperty", "definition": "Relates a decision to an observed outcome.", "domain": "pos:Decision", "range": "pos:Outcome" },
+
+    { "id": "pos:validFrom", "type": "pos:DatatypeProperty", "definition": "Inclusive start of an assertion's real-world validity.", "domain": "pos:Assertion", "range": "pos:Instant" },
+    { "id": "pos:validUntil", "type": "pos:DatatypeProperty", "definition": "Exclusive end of an assertion's real-world validity.", "domain": "pos:Assertion", "range": "pos:Instant" },
+    { "id": "pos:recordedAt", "type": "pos:DatatypeProperty", "definition": "Time at which a record entered canonical history.", "domain": "pos:Assertion", "range": "pos:Instant" },
+    { "id": "pos:epistemicOrigin", "type": "pos:DatatypeProperty", "definition": "How a claim was known: self-stated, observed, external, or inferred.", "domain": "pos:Assertion", "range": "pos:EpistemicOrigin" },
+    { "id": "pos:confidence", "type": "pos:DatatypeProperty", "definition": "Optional explicitly justified confidence; absence does not imply a numeric value.", "domain": "pos:Assertion", "range": "pos:Probability" },
+    { "id": "pos:privacyClass", "type": "pos:DatatypeProperty", "definition": "Governance classification P0 through P3 controlling permitted processing.", "domain": "pos:Evidence", "range": "pos:PrivacyClass" }
+  ]
+}

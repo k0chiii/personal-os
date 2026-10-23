@@ -1,0 +1,18 @@
+{
+  "name": "@personal-os/adapters-aws",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.922.0",
+    "@aws-sdk/client-s3": "^3.922.0",
+    "@aws-sdk/client-ssm": "^3.922.0",
+    "@aws-sdk/lib-dynamodb": "^3.922.0",
+    "@personal-os/domain": "workspace:*",
+    "@personal-os/ports": "workspace:*",
+    "temporal-polyfill": "^1.0.5"
+  }
+}

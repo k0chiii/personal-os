@@ -1,0 +1,28 @@
+{
+  "name": "@personal-os/aws-lambda",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "sam validate --lint --template-file ../../infra/aws/template.yaml",
+    "build": "sam build --template-file ../../infra/aws/template.yaml",
+    "deploy": "sam deploy --config-file ../../infra/aws/samconfig.toml",
+    "test:live": "node src/live-contract.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.922.0",
+    "@aws-sdk/client-s3": "^3.922.0",
+    "@aws-sdk/client-ssm": "^3.922.0",
+    "@aws-sdk/lib-dynamodb": "^3.922.0",
+    "@personal-os/adapters-aws": "workspace:*",
+    "@personal-os/adapters-openai": "workspace:*",
+    "@personal-os/api": "workspace:*",
+    "@personal-os/application": "workspace:*",
+    "@personal-os/ports": "workspace:*",
+    "@personal-os/retrieval": "workspace:*",
+    "temporal-polyfill": "^1.0.5"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.157"
+  }
+}

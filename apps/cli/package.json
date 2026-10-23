@@ -1,0 +1,14 @@
+{
+  "name": "@personal-os/cli",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "personal": "./src/main.ts"
+  },
+  "type": "module",
+  "dependencies": {
+    "@personal-os/adapters-local": "workspace:*",
+    "@personal-os/application": "workspace:*",
+    "@personal-os/domain": "workspace:*"
+  }
+}

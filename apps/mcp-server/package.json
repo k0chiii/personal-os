@@ -1,0 +1,16 @@
+{
+  "name": "@personal-os/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@personal-os/adapters-local": "workspace:*",
+    "@personal-os/adapters-ollama": "workspace:*",
+    "@personal-os/application": "workspace:*",
+    "@personal-os/domain": "workspace:*",
+    "temporal-polyfill": "^1.0.5"
+  }
+}
