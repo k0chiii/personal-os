@@ -1,4 +1,11 @@
-import { idAfterRemoval, inboxCommand, movedId, type ReviewAction } from "./inbox.ts";
+// oxlint-disable-next-line import/no-unassigned-import -- registers <sl-badge>
+import "@shoelace-style/shoelace/dist/components/badge/badge.js";
+import SlButton from "@shoelace-style/shoelace/dist/components/button/button.js";
+import SlInput from "@shoelace-style/shoelace/dist/components/input/input.js";
+// oxlint-disable-next-line import/no-unassigned-import -- registers <sl-tag>
+import "@shoelace-style/shoelace/dist/components/tag/tag.js";
+
+import { idAfterRemoval, inboxCommand, isTypingPath, movedId, type ReviewAction } from "./inbox.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -8,9 +15,9 @@ function byId(id: string): HTMLElement {
   return element;
 }
 
-function inputById(id: string): HTMLInputElement {
+function inputById(id: string): SlInput {
   const element = byId(id);
-  if (!(element instanceof HTMLInputElement)) throw new Error(`${id} is not an input.`);
+  if (!(element instanceof SlInput)) throw new Error(`${id} is not an sl-input.`);
   return element;
 }
 
@@ -151,7 +158,7 @@ function setPendingCount(count: number): void {
 
 function proposalCard(proposal: Proposal, index: number): string {
   const id = escapeHtml(proposal.id);
-  return `<article class="card inbox-card" tabindex="0" data-proposal-id="${id}" style="--i: ${index}" aria-labelledby="proposal-title-${id}" aria-describedby="review-shortcuts"><div class="card-body"><p class="card-tags"><span class="badge badge-kind">${escapeHtml(proposal.assertion.kind)}</span><span class="badge">${escapeHtml(proposal.assertion.privacy)}</span></p><h3 id="proposal-title-${id}">${escapeHtml(proposal.assertion.object)}</h3><p class="meta">根拠 ${proposal.assertion.evidenceIds.length} 件 ・ ${escapeHtml(new Date(proposal.createdAt).toLocaleString("ja-JP"))}</p></div><div class="actions"><button type="button" data-compose="approve">${ACTION_LABELS.approve}<kbd>A</kbd></button><button type="button" class="reject" data-compose="reject">${ACTION_LABELS.reject}<kbd>R</kbd></button></div></article>`;
+  return `<article class="card inbox-card" tabindex="0" data-proposal-id="${id}" style="--i: ${index}" aria-labelledby="proposal-title-${id}" aria-describedby="review-shortcuts"><div class="card-body"><p class="card-tags"><sl-tag size="small" variant="primary" class="badge-kind">${escapeHtml(proposal.assertion.kind)}</sl-tag><sl-tag size="small" variant="neutral">${escapeHtml(proposal.assertion.privacy)}</sl-tag></p><h3 id="proposal-title-${id}">${escapeHtml(proposal.assertion.object)}</h3><p class="meta">根拠 ${proposal.assertion.evidenceIds.length} 件 ・ ${escapeHtml(new Date(proposal.createdAt).toLocaleString("ja-JP"))}</p></div><div class="actions"><sl-button size="small" variant="primary" data-compose="approve">${ACTION_LABELS.approve}<kbd slot="suffix">A</kbd></sl-button><sl-button size="small" class="reject" data-compose="reject">${ACTION_LABELS.reject}<kbd slot="suffix">R</kbd></sl-button></div></article>`;
 }
 
 function renderProposals(): void {
@@ -188,15 +195,19 @@ function closeComposer(restoreFocus: boolean): void {
   if (restoreFocus && card !== null) focusCard(card);
 }
 
-function openComposer(card: HTMLElement, action: ReviewAction): void {
+async function openComposer(card: HTMLElement, action: ReviewAction): Promise<void> {
   closeComposer(false);
   const label = ACTION_LABELS[action];
+  const variant = action === "approve" ? "primary" : "danger";
   card.classList.toggle("composing--reject", action === "reject");
   card.insertAdjacentHTML(
     "beforeend",
-    `<form class="reason-form" data-action="${action}" novalidate><label for="reason-input">${label}する理由</label><div class="reason-row"><input id="reason-input" name="reason" autocomplete="off" placeholder="${REASON_PLACEHOLDERS[action]}" aria-describedby="reason-hint" /><button type="submit" class="confirm confirm--${action}">${label}を確定</button><button type="button" class="secondary" data-cancel-review>キャンセル</button></div><p id="reason-hint" class="reason-hint">${REASON_HINT}</p></form>`,
+    `<form class="reason-form" data-action="${action}" novalidate><sl-input id="reason-input" name="reason" size="small" autocomplete="off" label="${label}する理由" placeholder="${REASON_PLACEHOLDERS[action]}"><span slot="help-text" id="reason-hint" class="reason-hint">${REASON_HINT}</span></sl-input><div class="reason-actions"><sl-button type="submit" size="small" variant="${variant}" class="confirm confirm--${action}">${label}を確定</sl-button><sl-button size="small" data-cancel-review>キャンセル</sl-button></div></form>`,
   );
-  card.querySelector<HTMLInputElement>("#reason-input")?.focus();
+  const input = card.querySelector("#reason-input");
+  if (!(input instanceof SlInput)) return;
+  await input.updateComplete;
+  if (input.isConnected) input.focus();
 }
 
 async function leave(card: HTMLElement): Promise<void> {
@@ -227,18 +238,18 @@ async function submitReview(form: HTMLFormElement): Promise<void> {
   const id = card?.dataset.proposalId;
   const action = form.dataset.action;
   if (card === null || id === undefined || (action !== "approve" && action !== "reject")) return;
-  const input = form.querySelector<HTMLInputElement>("#reason-input");
+  const input = form.querySelector("#reason-input");
   const hint = form.querySelector<HTMLElement>("#reason-hint");
-  if (input === null || hint === null) return;
+  if (!(input instanceof SlInput) || hint === null) return;
   const reason = input.value.trim();
   if (reason.length === 0) {
-    input.setAttribute("aria-invalid", "true");
+    input.toggleAttribute("data-invalid", true);
     hint.textContent = "理由を入力してください。";
     hint.classList.add("error");
     input.focus();
     return;
   }
-  const controls = form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button");
+  const controls = form.querySelectorAll<SlInput | SlButton>("sl-input, sl-button");
   controls.forEach((control) => (control.disabled = true));
   card.setAttribute("aria-busy", "true");
   try {
@@ -267,11 +278,11 @@ document.addEventListener("submit", (event) => {
   void submitReview(form).catch((error: unknown) => toast(errorMessage(error)));
 });
 
-document.addEventListener("input", (event) => {
+document.addEventListener("sl-input", (event) => {
   const input = event.target;
-  if (!(input instanceof HTMLInputElement) || input.id !== "reason-input") return;
-  if (input.getAttribute("aria-invalid") === null) return;
-  input.removeAttribute("aria-invalid");
+  if (!(input instanceof SlInput) || input.id !== "reason-input") return;
+  if (!input.hasAttribute("data-invalid")) return;
+  input.removeAttribute("data-invalid");
   const hint = byId("reason-hint");
   hint.textContent = REASON_HINT;
   hint.classList.remove("error");
@@ -285,7 +296,7 @@ document.addEventListener("keydown", (event) => {
     closeComposer(true);
     return;
   }
-  if (target.closest("input, textarea, select, [contenteditable]") !== null) return;
+  if (isTypingPath(event.composedPath().filter((node) => node instanceof HTMLElement))) return;
   if (byId("review-view").classList.contains("hidden")) return;
   const command = inboxCommand(event);
   if (command === null) return;
@@ -293,7 +304,7 @@ document.addEventListener("keydown", (event) => {
   if (command.type === "compose") {
     if (card === null) return;
     event.preventDefault();
-    openComposer(card, command.action);
+    void openComposer(card, command.action);
     return;
   }
   const fromPage =
@@ -410,8 +421,8 @@ async function loadState(): Promise<void> {
 document.addEventListener("click", (event) => {
   const source = event.target;
   if (!(source instanceof Element)) return;
-  const target = source.closest("button");
-  if (!(target instanceof HTMLButtonElement)) return;
+  const target = source.closest<HTMLElement>("button, sl-button");
+  if (target === null) return;
   const view = target.dataset.view;
   if (view !== undefined) {
     document
@@ -433,7 +444,8 @@ document.addEventListener("click", (event) => {
   }
   const compose = target.dataset.compose;
   const card = target.closest<HTMLElement>(".inbox-card");
-  if ((compose === "approve" || compose === "reject") && card !== null) openComposer(card, compose);
+  if ((compose === "approve" || compose === "reject") && card !== null)
+    void openComposer(card, compose);
   if (target.dataset.cancelReview !== undefined) closeComposer(true);
   const refresh = target.dataset.refresh;
   if (refresh === "review")

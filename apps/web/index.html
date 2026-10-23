@@ -53,18 +53,26 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
             </summary>
             <form id="connection-form" class="connection-form">
-              <label for="api-base">API endpoint</label>
-              <input id="api-base" name="apiBase" type="url" placeholder="Same origin" />
-              <label for="access-token">Cognito access token</label>
-              <input
+              <sl-input
+                id="api-base"
+                name="apiBase"
+                type="url"
+                size="small"
+                label="API endpoint"
+                placeholder="Same origin"
+              ></sl-input>
+              <sl-input
                 id="access-token"
                 name="accessToken"
                 type="password"
+                size="small"
                 autocomplete="off"
+                label="Cognito access token"
                 placeholder="Bearer token"
-              />
+                password-toggle
+              ></sl-input>
               <p>トークンはこのタブを閉じると破棄されます。</p>
-              <button type="submit">接続を更新</button>
+              <sl-button type="submit" size="small" variant="primary">接続を更新</sl-button>
             </form>
           </details>
           <p class="build-label">v1.0.0-rc.1</p>
@@ -118,18 +126,19 @@
             <div>
               <p class="kicker">Review queue</p>
               <h2 id="review-title" tabindex="-1">
-                審査待ちの提案 <span id="inbox-count" class="inbox-count">—</span>
+                審査待ちの提案
+                <sl-badge id="inbox-count" class="inbox-count" variant="primary" pill>—</sl-badge>
               </h2>
               <p>根拠を確認してから、記憶への追加を承認してください。</p>
             </div>
-            <button class="secondary icon-button" data-refresh="review">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+            <sl-button size="small" class="icon-button" data-refresh="review">
+              <svg slot="prefix" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.8-2L20 11M4 13l2.1 4a7 7 0 0 0 11.8-2"
                 />
               </svg>
               更新
-            </button>
+            </sl-button>
           </div>
           <p id="review-shortcuts" class="shortcut-hint" hidden>
             <span><kbd>J</kbd><kbd>K</kbd> で移動</span><span><kbd>A</kbd> で承認</span
@@ -201,13 +210,13 @@
               <h2 id="timeline-title">監査タイムライン</h2>
               <p>いつ、誰が、何を、なぜ変更したかを追跡できます。</p>
             </div>
-            <button class="secondary icon-button" data-refresh="timeline">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+            <sl-button size="small" class="icon-button" data-refresh="timeline">
+              <svg slot="prefix" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.8-2L20 11M4 13l2.1 4a7 7 0 0 0 11.8-2"
                 /></svg
               >更新
-            </button>
+            </sl-button>
           </div>
           <ol id="timeline-list" class="timeline" aria-live="polite">
             <li>
@@ -224,13 +233,13 @@
               <h2 id="state-title">現在の状態</h2>
               <p>いま有効な目標・価値観・制約などを種類ごとに確認します。</p>
             </div>
-            <button class="secondary icon-button" data-refresh="state">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+            <sl-button size="small" class="icon-button" data-refresh="state">
+              <svg slot="prefix" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.8-2L20 11M4 13l2.1 4a7 7 0 0 0 11.8-2"
                 /></svg
               >更新
-            </button>
+            </sl-button>
           </div>
           <div id="state-content" class="state-grid" aria-live="polite">
             <section class="state-group">

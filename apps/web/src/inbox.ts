@@ -20,6 +20,23 @@ const KEY_COMMANDS: Readonly<Record<string, InboxCommand>> = {
   r: { type: "compose", action: "reject" },
 };
 
+interface PathNode {
+  tagName?: string;
+  isContentEditable?: boolean;
+}
+
+const EDITABLE_TAGS: ReadonlySet<string> = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+
+// Shoelace fields keep the real <input> in a shadow root, so a key event's
+// target is the retargeted host; only the composed path reveals the field.
+export function isTypingPath(path: readonly PathNode[]): boolean {
+  return path.some(
+    (node) =>
+      node.isContentEditable === true ||
+      (node.tagName !== undefined && EDITABLE_TAGS.has(node.tagName)),
+  );
+}
+
 export function inboxCommand(input: KeyInput): InboxCommand | null {
   if (input.altKey || input.ctrlKey || input.metaKey) return null;
   const key = input.key.length === 1 ? input.key.toLowerCase() : input.key;

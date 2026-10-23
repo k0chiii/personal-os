@@ -1,3 +1,5 @@
+@import "@shoelace-style/shoelace/dist/themes/light.css";
+
 :root {
   color: #1c211d;
   background: #eceee9;
@@ -16,6 +18,67 @@
   --accent-dark: #31580d;
   --danger: #b94e3b;
   --shadow: 0 18px 50px rgba(24, 32, 25, 0.07);
+
+  --sl-font-sans: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
+  --sl-font-mono: ui-monospace, monospace;
+  --sl-color-primary-50: #f6fbef;
+  --sl-color-primary-100: #edf7e3;
+  --sl-color-primary-200: #dcefc4;
+  --sl-color-primary-300: #b8d99a;
+  --sl-color-primary-400: #cdf78f;
+  --sl-color-primary-500: #c6f57d;
+  --sl-color-primary-600: var(--accent);
+  --sl-color-primary-700: #a3dc4f;
+  --sl-color-primary-800: var(--accent-dark);
+  --sl-color-primary-900: #26351d;
+  --sl-color-primary-950: #17200f;
+  --sl-color-danger-50: #fff9f7;
+  --sl-color-danger-100: #fbeeea;
+  --sl-color-danger-200: #ead7d2;
+  --sl-color-danger-300: #d9a99c;
+  --sl-color-danger-400: #c97a68;
+  --sl-color-danger-500: #c35f4b;
+  --sl-color-danger-600: var(--danger);
+  --sl-color-danger-700: #9c3f2f;
+  --sl-color-danger-800: #7c4d42;
+  --sl-color-danger-900: #5a2a20;
+  --sl-color-danger-950: #3a1a13;
+  --sl-color-neutral-0: var(--paper);
+  --sl-color-neutral-50: var(--surface);
+  --sl-color-neutral-100: #f3f5f1;
+  --sl-color-neutral-200: var(--line);
+  --sl-color-neutral-300: #d5dad3;
+  --sl-color-neutral-400: #b8c0b3;
+  --sl-color-neutral-500: var(--muted-2);
+  --sl-color-neutral-600: var(--muted);
+  --sl-color-neutral-700: #4f574e;
+  --sl-color-neutral-800: var(--line-dark);
+  --sl-color-neutral-900: var(--ink);
+  --sl-color-neutral-950: var(--sidebar);
+  --sl-color-neutral-1000: var(--sidebar);
+  --sl-border-radius-small: 0.3rem;
+  --sl-border-radius-medium: 0.5rem;
+  --sl-border-radius-large: 0.75rem;
+  --sl-focus-ring-color: rgba(185, 242, 101, 0.55);
+  --sl-focus-ring-width: 3px;
+  --sl-input-color: var(--ink);
+  --sl-input-background-color: #fafbf9;
+  --sl-input-background-color-hover: #fafbf9;
+  --sl-input-background-color-focus: var(--paper);
+  --sl-input-border-color: #d5dad3;
+  --sl-input-border-color-hover: #c0c6be;
+  --sl-input-border-color-focus: #8aaa68;
+  --sl-input-focus-ring-color: rgba(185, 242, 101, 0.18);
+  --sl-input-placeholder-color: var(--muted-2);
+  --sl-input-label-color: #60675f;
+  --sl-input-label-font-size-small: 0.68rem;
+  --sl-input-help-text-color: var(--muted-2);
+  --sl-input-help-text-font-size-small: 0.64rem;
+  --sl-input-font-size-small: 0.8rem;
+  --sl-button-font-size-small: 0.7rem;
+}
+:is(sl-button, sl-input, sl-badge, sl-tag):not(:defined) {
+  visibility: hidden;
 }
 
 * {
@@ -238,21 +301,19 @@ svg {
   gap: 0.55rem;
   padding: 0 0.4rem 1rem;
 }
-.connection-form label {
-  color: #858d83;
-  font-size: 0.67rem;
-}
-.connection-form input {
-  min-width: 0;
-  padding: 0.62rem 0.68rem;
-  color: white;
-  border: 1px solid #343a32;
-  border-radius: 0.45rem;
-  outline: none;
-  background: #1a1d18;
-}
-.connection-form input:focus {
-  border-color: var(--accent);
+.connection-form {
+  --sl-input-color: white;
+  --sl-input-label-color: #858d83;
+  --sl-input-label-font-size-small: 0.67rem;
+  --sl-input-background-color: #1a1d18;
+  --sl-input-background-color-hover: #1a1d18;
+  --sl-input-background-color-focus: #1a1d18;
+  --sl-input-border-color: #343a32;
+  --sl-input-border-color-hover: #454c42;
+  --sl-input-border-color-focus: var(--accent);
+  --sl-input-icon-color: #858d83;
+  --sl-input-icon-color-hover: white;
+  --sl-input-placeholder-color: #626960;
 }
 .connection-form p {
   margin: 0.1rem 0;
@@ -260,14 +321,8 @@ svg {
   font-size: 0.64rem;
   line-height: 1.5;
 }
-.connection-form button {
-  padding: 0.65rem;
-  color: #151812;
-  font-size: 0.74rem;
-  font-weight: 700;
-  border: 0;
-  border-radius: 0.45rem;
-  background: var(--accent);
+.connection-form sl-button {
+  margin-top: 0.2rem;
 }
 .build-label {
   margin: 0.65rem 0.55rem 0;
@@ -441,18 +496,15 @@ h1 {
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
-button.secondary {
-  color: #4f574e;
-  border: 1px solid var(--line);
-  background: var(--paper);
+sl-button::part(base) {
+  font-weight: 700;
 }
-.icon-button {
-  display: flex;
-  gap: 0.45rem;
-  align-items: center;
-  padding: 0.55rem 0.75rem;
-  font-size: 0.72rem;
-  border-radius: 0.55rem;
+sl-button[variant="default"]::part(base) {
+  color: #4f574e;
+}
+sl-button[variant="primary"]::part(base),
+sl-badge[variant="primary"]::part(base) {
+  color: #171a15;
 }
 .icon-button svg {
   width: 0.9rem;
@@ -511,7 +563,6 @@ button.secondary {
   display: flex;
   gap: 0.45rem;
 }
-.actions button,
 .search-input-wrap button {
   padding: 0.55rem 0.85rem;
   color: #171a15;
@@ -521,28 +572,30 @@ button.secondary {
   border-radius: 0.5rem;
   background: var(--accent);
 }
-.actions button.reject {
-  color: #7c4d42;
-  border-color: #ead7d2;
-  background: #fff9f7;
+.actions sl-button.reject::part(base) {
+  color: var(--sl-color-danger-800);
+  border-color: var(--sl-color-danger-200);
+  background: var(--sl-color-danger-50);
+}
+.card-tags sl-tag {
+  margin-right: 0.28rem;
+}
+sl-tag::part(base) {
+  font-weight: 600;
+  letter-spacing: 0.025em;
 }
 .main-content:focus,
 #review-title:focus {
   outline: none;
 }
 .inbox-count {
-  display: inline-grid;
-  min-width: 1.6rem;
   margin-left: 0.35rem;
-  padding: 0.1rem 0.45rem;
-  place-items: center;
-  color: #11130f;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0;
   vertical-align: 0.15em;
-  border-radius: 999px;
-  background: var(--accent);
+}
+.inbox-count::part(base) {
+  min-width: 1.6rem;
+  font-size: 0.75rem;
+  letter-spacing: 0;
 }
 .shortcut-hint {
   display: flex;
@@ -618,8 +671,8 @@ kbd {
     transform: translateX(1.5rem);
   }
 }
-.actions button kbd {
-  margin: 0 0 0 0.45rem;
+.actions sl-button kbd {
+  margin: 0;
   color: inherit;
   border-color: rgba(23, 26, 21, 0.25);
   background: rgba(255, 255, 255, 0.45);
@@ -632,56 +685,19 @@ kbd {
   border-top: 1px solid #edf0eb;
   animation: card-enter 0.2s ease both;
 }
-.reason-form label {
-  color: #60675f;
-  font-size: 0.68rem;
+.reason-form sl-input::part(form-control-label) {
   font-weight: 600;
 }
-.reason-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.45rem;
-}
-.reason-row input {
-  min-width: 0;
-  padding: 0.6rem 0.8rem;
-  color: var(--ink);
-  font-size: 0.8rem;
-  border: 1px solid #d5dad3;
-  border-radius: 0.5rem;
-  outline: none;
-  background: #fafbf9;
-}
-.reason-row input:focus {
-  border-color: #8aaa68;
-  box-shadow: 0 0 0 3px rgba(185, 242, 101, 0.18);
-}
-.reason-row input[aria-invalid="true"] {
+.reason-form sl-input[data-invalid]::part(base) {
   border-color: var(--danger);
 }
-.reason-row button {
-  padding: 0.55rem 0.85rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  border-radius: 0.5rem;
+.reason-actions {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: flex-end;
 }
-.reason-row button:disabled {
+.reason-actions sl-button[disabled]::part(base) {
   cursor: progress;
-}
-.confirm--approve {
-  color: #171a15;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-}
-.confirm--reject {
-  color: white;
-  border: 1px solid var(--danger);
-  background: var(--danger);
-}
-.reason-hint {
-  margin: 0;
-  color: var(--muted-2);
-  font-size: 0.64rem;
 }
 .reason-hint.error {
   color: var(--danger);
@@ -1036,18 +1052,13 @@ kbd {
   .actions {
     justify-content: stretch;
   }
-  .actions button {
+  .actions sl-button,
+  .reason-actions sl-button {
     flex: 1;
   }
   .shortcut-hint,
-  .actions button kbd {
+  .actions sl-button kbd {
     display: none;
-  }
-  .reason-row {
-    grid-template-columns: 1fr 1fr;
-  }
-  .reason-row input {
-    grid-column: 1 / -1;
   }
   .search-input-wrap {
     grid-template-columns: 1fr;

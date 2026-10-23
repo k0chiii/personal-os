@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { idAfterRemoval, inboxCommand, movedId } from "./inbox.ts";
+import { idAfterRemoval, inboxCommand, isTypingPath, movedId } from "./inbox.ts";
 
 const plain = { altKey: false, ctrlKey: false, metaKey: false };
 
@@ -51,5 +51,22 @@ describe("idAfterRemoval", () => {
 
   it("returns null when the last card leaves", () => {
     expect(idAfterRemoval(["p1"], "p1")).toBeNull();
+  });
+});
+
+describe("isTypingPath", () => {
+  it("sees a native input inside a Shoelace shadow root", () => {
+    const path = [{ tagName: "INPUT" }, {}, { tagName: "SL-INPUT" }, { tagName: "FORM" }];
+    expect(isTypingPath(path)).toBe(true);
+  });
+
+  it("treats contenteditable and textarea as typing", () => {
+    expect(isTypingPath([{ tagName: "DIV", isContentEditable: true }])).toBe(true);
+    expect(isTypingPath([{ tagName: "TEXTAREA" }])).toBe(true);
+  });
+
+  it("lets shortcuts through on cards and Shoelace buttons", () => {
+    const path = [{ tagName: "BUTTON" }, {}, { tagName: "SL-BUTTON" }, { tagName: "ARTICLE" }];
+    expect(isTypingPath(path)).toBe(false);
   });
 });
