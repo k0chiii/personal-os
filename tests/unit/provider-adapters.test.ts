@@ -136,7 +136,9 @@ describe("LLM provider adapters", () => {
     async (_name, endpoint, createAdapter) => {
       const seen: string[] = [];
       const adapter = createAdapter(endpoint, async (input, init) => {
-        seen.push(String(input));
+        seen.push(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        );
         expect(init?.redirect).toBe("error");
         throw new TypeError("redirect mode is set to error");
       });
