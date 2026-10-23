@@ -391,6 +391,7 @@ h1 {
 }
 .status-card strong {
   margin-top: 0.08rem;
+  transform-origin: left center;
   font-size: 1.45rem;
   line-height: 1;
   letter-spacing: -0.04em;

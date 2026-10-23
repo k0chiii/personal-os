@@ -127,6 +127,7 @@ const REASON_PLACEHOLDERS: Readonly<Record<ReviewAction, string>> = {
   approve: "例：本人の発言と一致している",
   reject: "例：根拠と内容が食い違っている",
 };
+const REASON_HINT = "Enter で確定 ・ Esc で取り消し";
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let proposals: Proposal[] = [];
@@ -187,7 +188,7 @@ function openComposer(card: HTMLElement, action: ReviewAction): void {
   card.classList.add("composing", `composing--${action}`);
   card.insertAdjacentHTML(
     "beforeend",
-    `<form class="reason-form" data-action="${action}" novalidate><label for="reason-input">${label}する理由</label><div class="reason-row"><input id="reason-input" name="reason" autocomplete="off" placeholder="${REASON_PLACEHOLDERS[action]}" aria-describedby="reason-hint" /><button type="submit" class="confirm confirm--${action}">${label}を確定</button><button type="button" class="secondary" data-cancel-review>キャンセル</button></div><p id="reason-hint" class="reason-hint">Enter で確定 ・ Esc で取り消し</p></form>`,
+    `<form class="reason-form" data-action="${action}" novalidate><label for="reason-input">${label}する理由</label><div class="reason-row"><input id="reason-input" name="reason" autocomplete="off" placeholder="${REASON_PLACEHOLDERS[action]}" aria-describedby="reason-hint" /><button type="submit" class="confirm confirm--${action}">${label}を確定</button><button type="button" class="secondary" data-cancel-review>キャンセル</button></div><p id="reason-hint" class="reason-hint">${REASON_HINT}</p></form>`,
   );
   card.querySelector<HTMLInputElement>("#reason-input")?.focus();
 }
@@ -262,6 +263,16 @@ document.addEventListener("submit", (event) => {
   if (!(form instanceof HTMLFormElement) || !form.classList.contains("reason-form")) return;
   event.preventDefault();
   void submitReview(form).catch((error: unknown) => toast(errorMessage(error)));
+});
+
+document.addEventListener("input", (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || input.id !== "reason-input") return;
+  if (input.getAttribute("aria-invalid") === null) return;
+  input.removeAttribute("aria-invalid");
+  const hint = byId("reason-hint");
+  hint.textContent = REASON_HINT;
+  hint.classList.remove("error");
 });
 
 document.addEventListener("keydown", (event) => {
