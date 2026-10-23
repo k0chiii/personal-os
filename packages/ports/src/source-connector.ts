@@ -11,8 +11,14 @@ export interface SourceDocument {
   readonly mediaType: string;
 }
 
+export interface SourceSkip {
+  readonly externalId: string;
+  readonly reason: string;
+}
+
 export interface SourcePage {
   readonly documents: readonly SourceDocument[];
+  readonly skipped: readonly SourceSkip[];
   readonly nextCursor: string | null;
 }
 
