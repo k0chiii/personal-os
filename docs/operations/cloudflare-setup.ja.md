@@ -60,8 +60,9 @@ rtk pnpm --filter @personal-os/web build
 rtk pnpm --filter @personal-os/worker deploy
 ```
 
-`apps/web/dist` もWorkerの静的アセットとして配信されます。初回デプロイ直後の `workers.dev`
-URL は本番利用しません。Access設定が終わるまで個人データを投入しないでください。
+`apps/web/dist` もWorkerの静的アセットとして配信されます。`wrangler.jsonc` は
+`workers_dev: false` と `preview_urls: false` を指定しているため、デプロイしても `workers.dev`
+URL とプレビューURLは公開されません。Access設定が終わるまで個人データを投入しないでください。
 
 ## 5. カスタムドメインと Cloudflare Access
 
@@ -72,7 +73,7 @@ Workerは `CF-Access-Authenticated-User-Email` を認証済み主体として使
 2. Zero Trust > Access > Applications で Self-hosted application を追加する。
 3. Application domain を `personal.example.com/*` とし、自分のメールだけを `Allow` する。
 4. 外部監視が必要なら、`/health` 専用のAccessポリシーと認証方法を別に設計する。
-5. カスタムドメインで確認後、対象Workerの `workers.dev` を無効にする。代替の公開経路を残さない。
+5. ダッシュボードで `workers.dev` やプレビューURLを有効にしない。`wrangler.jsonc` の `workers_dev` と `preview_urls` は `false` のままにし、代替の公開経路を残さない。
 6. `wrangler.jsonc` の `REQUIRE_ACCESS` は本番で必ず `"true"` のままにする。
 
 Accessを通らない公開 `workers.dev` URLを残すと、認証ヘッダーをクライアントが直接送れるため

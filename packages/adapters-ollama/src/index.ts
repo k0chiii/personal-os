@@ -2,8 +2,10 @@ import {
   LlmRateLimited,
   LlmUnavailable,
   StructuredOutputInvalid,
+  isLoopbackEndpoint,
   type GenerateRequest,
   type GenerateResult,
+  type LlmCapabilities,
   type LlmPort,
   type StructuredRequest,
 } from "@personal-os/ports";
@@ -17,15 +19,8 @@ export interface OllamaAdapterOptions {
 export class OllamaAdapter implements LlmPort {
   readonly providerId = "ollama";
   readonly model: string;
-  readonly remote = false;
-  readonly capabilities = {
-    structuredOutput: true,
-    toolCalling: false,
-    streaming: false,
-    vision: false,
-    embeddings: false,
-    local: true,
-  } as const;
+  readonly remote: boolean;
+  readonly capabilities: LlmCapabilities;
   readonly #endpoint: string;
   readonly #fetch: typeof fetch;
 
@@ -33,6 +28,16 @@ export class OllamaAdapter implements LlmPort {
     this.model = options.model;
     this.#endpoint = options.endpoint ?? "http://127.0.0.1:11434/v1/chat/completions";
     this.#fetch = options.fetch ?? globalThis.fetch;
+    const local = isLoopbackEndpoint(this.#endpoint);
+    this.remote = !local;
+    this.capabilities = {
+      structuredOutput: true,
+      toolCalling: false,
+      streaming: false,
+      vision: false,
+      embeddings: false,
+      local,
+    };
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {

@@ -71,6 +71,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
 }
 
 class InMemoryAwsClient implements AwsSdkClientLike {
+  indexLagging = false;
   readonly #tables = new Map<string, Map<string, Record<string, unknown>>>();
   readonly #objects = new Map<string, Uint8Array>();
 
@@ -110,8 +111,21 @@ class InMemoryAwsClient implements AwsSdkClientLike {
       return {};
     }
     if (command instanceof ScanCommand) {
+      const items = [...this.#table(requiredString(command.input.TableName, "TableName")).values()];
+      const values = command.input.ExpressionAttributeValues;
+      if (values === undefined) {
+        return { Items: items };
+      }
+      if (command.input.ConsistentRead !== true) {
+        throw new Error("Event log scans must be strongly consistent.");
+      }
       return {
-        Items: [...this.#table(requiredString(command.input.TableName, "TableName")).values()],
+        Items: items.filter(
+          (item) =>
+            item.entityType === values[":event"] &&
+            Number(item.globalPosition) >= Number(values[":first"]) &&
+            Number(item.globalPosition) <= Number(values[":head"]),
+        ),
       };
     }
     if (command instanceof QueryCommand) {
@@ -119,15 +133,20 @@ class InMemoryAwsClient implements AwsSdkClientLike {
       const values = record(command.input.ExpressionAttributeValues, "ExpressionAttributeValues");
       const items = [...table.values()];
       if (command.input.IndexName === "byGlobalPosition") {
-        const after = values[":after"];
-        if (typeof after !== "number") {
-          throw new Error(":after must be a number.");
+        const first = values[":first"];
+        const head = values[":head"];
+        if (typeof first !== "number" || typeof head !== "number") {
+          throw new Error(":first and :head must be numbers.");
         }
-        return {
-          Items: items
-            .filter((item) => item.gsi1pk === values[":events"] && Number(item.gsi1sk) > after)
-            .sort((left, right) => Number(left.gsi1sk) - Number(right.gsi1sk)),
-        };
+        const indexed = items
+          .filter(
+            (item) =>
+              item.gsi1pk === values[":events"] &&
+              Number(item.gsi1sk) >= first &&
+              Number(item.gsi1sk) <= head,
+          )
+          .sort((left, right) => Number(left.gsi1sk) - Number(right.gsi1sk));
+        return { Items: this.indexLagging ? indexed.slice(0, -1) : indexed };
       }
       return {
         Items: items
@@ -387,5 +406,36 @@ describe.each(adapters)("runtime adapter contract: %s", (_name, createHarness) =
     } finally {
       await harness.close();
     }
+  });
+});
+
+describe("DynamoDB Event log completeness", () => {
+  it("replays every committed Event when the global-position index lags", async () => {
+    const client = new InMemoryAwsClient();
+    const eventStore = new DynamoDbEventStore(client, "events");
+    const application = new PersonalOsApplication({
+      clock: new AwsSystemClock(),
+      idGenerator: new AwsUuidV7Generator(),
+      contentHasher: new AwsContentHasher(),
+      rawEvidenceStore: new S3RawEvidenceStore(client, "evidence"),
+      eventStore,
+      projection: new DynamoDbProjection(client, "projections"),
+    });
+    for (const content of ["first", "second", "third"]) {
+      await application.importTextEvidence({
+        content,
+        sourceType: "plain_text",
+        privacy: "P1",
+        mediaType: "text/plain",
+        actor: "owner",
+        reason: "Lagging index contract",
+      });
+    }
+
+    client.indexLagging = true;
+
+    expect((await eventStore.readAll()).map((event) => event.globalPosition)).toEqual([1, 2, 3]);
+    expect((await eventStore.readAll(1)).map((event) => event.globalPosition)).toEqual([2, 3]);
+    expect(await application.rebuild()).toBe(3);
   });
 });

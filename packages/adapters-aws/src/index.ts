@@ -360,6 +360,17 @@ function storedEventFromItem(item: Record<string, unknown>): StoredEvent {
   };
 }
 
+function isContiguousFrom(
+  events: readonly StoredEvent[],
+  afterPosition: number,
+  expected: number,
+): boolean {
+  return (
+    events.length === expected &&
+    events.every((event, index) => event.globalPosition === afterPosition + index + 1)
+  );
+}
+
 export class DynamoDbEventStore implements EventStorePort {
   readonly #client: AwsSdkClientLike;
   readonly #tableName: string;
@@ -489,12 +500,55 @@ export class DynamoDbEventStore implements EventStorePort {
   }
 
   async readAll(afterPosition = 0): Promise<readonly StoredEvent[]> {
-    const items = await this.#queryAll({
+    const head = await this.#globalPosition();
+    const expected = Math.max(0, head - afterPosition);
+    const indexed = await this.#queryAll({
       TableName: this.#tableName,
       IndexName: "byGlobalPosition",
-      KeyConditionExpression: "gsi1pk = :events AND gsi1sk > :after",
-      ExpressionAttributeValues: { ":events": "EVENTS", ":after": afterPosition },
+      KeyConditionExpression: "gsi1pk = :events AND gsi1sk BETWEEN :first AND :head",
+      ExpressionAttributeValues: {
+        ":events": "EVENTS",
+        ":first": afterPosition + 1,
+        ":head": head,
+      },
     });
+    const fromIndex = indexed.map(storedEventFromItem);
+    if (isContiguousFrom(fromIndex, afterPosition, expected)) {
+      return fromIndex;
+    }
+    // The global-position GSI is eventually consistent, so a lagging index falls back to a strongly consistent base-table scan.
+    const scanned = (await this.#consistentEventScan(afterPosition, head)).toSorted(
+      (left, right) => left.globalPosition - right.globalPosition,
+    );
+    if (!isContiguousFrom(scanned, afterPosition, expected)) {
+      throw new Error(
+        `DynamoDB Event log is incomplete: expected positions ${afterPosition + 1}..${head}, found ${scanned.length} Events.`,
+      );
+    }
+    return scanned;
+  }
+
+  async #consistentEventScan(afterPosition: number, head: number): Promise<readonly StoredEvent[]> {
+    const items: Record<string, unknown>[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    do {
+      const output = await send(
+        this.#client,
+        new ScanCommand({
+          TableName: this.#tableName,
+          ConsistentRead: true,
+          FilterExpression: "entityType = :event AND globalPosition BETWEEN :first AND :head",
+          ExpressionAttributeValues: {
+            ":event": "event",
+            ":first": afterPosition + 1,
+            ":head": head,
+          },
+          ExclusiveStartKey: exclusiveStartKey,
+        }),
+      );
+      items.push(...itemsFromOutput(output));
+      exclusiveStartKey = lastEvaluatedKey(output);
+    } while (exclusiveStartKey !== undefined);
     return items.map(storedEventFromItem);
   }
 

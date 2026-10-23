@@ -31,6 +31,15 @@ export interface StructuredRequest<T> extends GenerateRequest {
   readonly parse: (value: unknown) => T;
 }
 
+export function isLoopbackEndpoint(endpoint: string): boolean {
+  const hostname = new URL(endpoint).hostname;
+  return (
+    hostname === "localhost" ||
+    hostname === "[::1]" ||
+    /^127(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/u.test(hostname)
+  );
+}
+
 export interface LlmPort {
   readonly providerId: string;
   readonly model: string;

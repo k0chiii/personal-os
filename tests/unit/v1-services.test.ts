@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import { FixedWindowRateLimiter } from "../../apps/api/src/handler.ts";
@@ -7,7 +9,7 @@ import {
 } from "../../apps/aws-lambda/src/owner-authenticator.ts";
 import { CloudflareNativeRateLimiter } from "../../apps/worker/src/index.ts";
 import { DecisionCritic, type ContextPack } from "../../packages/application/src/index.ts";
-import type { AssertionSnapshot } from "../../packages/domain/src/index.ts";
+import type { AssertionSnapshot, DecisionSnapshot } from "../../packages/domain/src/index.ts";
 
 function assertion(id: string): AssertionSnapshot {
   return {
@@ -24,6 +26,30 @@ function assertion(id: string): AssertionSnapshot {
     recordedAt: "2026-10-01T00:00:00Z",
     privacy: "P0",
     status: "active",
+  };
+}
+
+function decision(
+  id: string,
+  options: readonly (readonly [string, string])[],
+  chosenOptionId: string,
+): DecisionSnapshot {
+  return {
+    id,
+    subjectId: "owner",
+    problem: "Where to live",
+    options: options.map(([optionId, label]) => ({ id: optionId, label, rejectedReason: null })),
+    chosenOptionId,
+    criteria: [],
+    rationale: "",
+    constraints: [],
+    stateSnapshot: "",
+    evidenceIds: [],
+    decidedAt: "2026-10-01T00:00:00Z",
+    recordedAt: "2026-10-01T00:00:00Z",
+    privacy: "P0",
+    outcome: null,
+    retrospective: null,
   };
 }
 
@@ -91,6 +117,16 @@ describe("v1 operational services", () => {
     expect(keys).toEqual(["owner", "owner"]);
   });
 
+  it("keeps the Worker off every public URL that bypasses Cloudflare Access", async () => {
+    const config = await readFile(
+      new URL("../../apps/worker/wrangler.jsonc", import.meta.url),
+      "utf8",
+    );
+
+    expect(config).toMatch(/"workers_dev":\s*false/u);
+    expect(config).toMatch(/"preview_urls":\s*false/u);
+  });
+
   it("admits only the configured owner subject on the AWS Lambda path", () => {
     const authenticator = ownerAuthenticator("owner-sub");
     const request = (subject?: string) =>
@@ -124,6 +160,61 @@ describe("v1 operational services", () => {
       prediction: "Choose option B because of assertion-1.",
     });
     expect(cited).toEqual({ recommendation: "accept", issues: [] });
+  });
+
+  it("compares similar Decisions by chosen Option label, not by per-Decision Option ID", () => {
+    const review = (...decisions: DecisionSnapshot[]) =>
+      new DecisionCritic().review({
+        context: { ...emptyContext(), relevantDecisions: decisions },
+        prediction: null,
+      });
+
+    const sameChoiceDifferentIds = review(
+      decision(
+        "decision-1",
+        [
+          ["option-a", "Rent"],
+          ["option-b", "Buy"],
+        ],
+        "option-b",
+      ),
+      decision(
+        "decision-2",
+        [
+          ["x1", " buy "],
+          ["x2", "Rent"],
+        ],
+        "x1",
+      ),
+    );
+    expect(sameChoiceDifferentIds).toEqual({ recommendation: "accept", issues: [] });
+
+    const differentChoiceSameIds = review(
+      decision(
+        "decision-1",
+        [
+          ["option-a", "Rent"],
+          ["option-b", "Buy"],
+        ],
+        "option-a",
+      ),
+      decision(
+        "decision-2",
+        [
+          ["option-a", "Buy"],
+          ["option-b", "Rent"],
+        ],
+        "option-a",
+      ),
+    );
+    expect(differentChoiceSameIds.issues).toEqual([
+      {
+        code: "conflicting_decisions",
+        severity: "warning",
+        detail: "Similar recorded Decisions selected different options.",
+        contextIds: ["decision-1", "decision-2"],
+      },
+    ]);
   });
 
   it("makes the Critic abstain when the retrieved context is contradictory", () => {

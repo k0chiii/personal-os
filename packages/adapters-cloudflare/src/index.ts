@@ -62,7 +62,7 @@ export interface VectorizeIndexLike {
   deleteByIds(ids: readonly string[]): Promise<unknown>;
   query(
     vector: readonly number[],
-    options: { readonly topK: number; readonly returnMetadata: true },
+    options: { readonly topK: number; readonly returnMetadata: "all" | "indexed" | "none" },
   ): Promise<{
     readonly matches: readonly {
       readonly id: string;
@@ -71,6 +71,8 @@ export interface VectorizeIndexLike {
     }[];
   }>;
 }
+
+const VECTORIZE_MAX_TOP_K_WITH_METADATA = 50;
 
 export class CloudflareVectorizeIndex implements VectorIndexPort {
   readonly #index: VectorizeIndexLike;
@@ -102,8 +104,8 @@ export class CloudflareVectorizeIndex implements VectorIndexPort {
   }): Promise<readonly VectorSearchResult[]> {
     const allowed = new Set(input.privacy);
     const result = await this.#index.query(input.vector, {
-      topK: Math.min(100, Math.max(input.limit * 4, input.limit)),
-      returnMetadata: true,
+      topK: Math.min(VECTORIZE_MAX_TOP_K_WITH_METADATA, Math.max(input.limit * 4, input.limit)),
+      returnMetadata: "all",
     });
     return result.matches
       .filter((match) => {

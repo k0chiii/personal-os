@@ -18,6 +18,17 @@ export interface CriticReport {
   readonly issues: readonly CriticIssue[];
 }
 
+type RelevantDecision = ContextPack["relevantDecisions"][number];
+
+// Option IDs are scoped to one Decision, so similar Decisions are compared by what was chosen.
+function chosenOptionLabel(decision: RelevantDecision): string {
+  const chosen = decision.options.find((option) => option.id === decision.chosenOptionId);
+  return (chosen?.label ?? decision.chosenOptionId)
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLocaleLowerCase();
+}
+
 export class DecisionCritic {
   review(input: {
     readonly context: ContextPack;
@@ -39,7 +50,7 @@ export class DecisionCritic {
       decisionsByProblem.set(key, [...(decisionsByProblem.get(key) ?? []), decision]);
     }
     for (const decisions of decisionsByProblem.values()) {
-      if (new Set(decisions.map((decision) => decision.chosenOptionId)).size > 1) {
+      if (new Set(decisions.map(chosenOptionLabel)).size > 1) {
         issues.push({
           code: "conflicting_decisions",
           severity: "warning",

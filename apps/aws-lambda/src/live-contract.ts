@@ -104,7 +104,19 @@ async function run(): Promise<void> {
   assert.ok(search.some((candidate) => candidate.id === assertion.id));
 
   const canonical = await eventStore.readAll();
-  assert.ok(canonical.length >= 4);
+  assert.deepEqual(
+    canonical.map((stored) => stored.globalPosition),
+    canonical.map((_stored, index) => index + 1),
+  );
+  const runEventTypes = canonical
+    .filter(
+      (stored) =>
+        (stored.event.type === "evidence.imported" &&
+          stored.event.evidence.id === imported.evidence.id) ||
+        (stored.event.type === "assertion.created" && stored.event.assertion.id === assertion.id),
+    )
+    .map((stored) => stored.event.type);
+  assert.deepEqual(runEventTypes, ["evidence.imported", "assertion.created"]);
   assert.equal(await application.rebuild(), canonical.length);
   assert.ok(
     (await application.searchAssertions({ query: runId, privacy: ["P1"] })).some(

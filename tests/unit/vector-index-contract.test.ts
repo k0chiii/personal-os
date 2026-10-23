@@ -31,19 +31,40 @@ class FakeVectorize implements VectorizeIndexLike {
     for (const id of ids) this.records.delete(id);
   }
 
-  async query(vector: readonly number[]): Promise<{
+  async query(
+    vector: readonly number[],
+    options: { readonly topK: number; readonly returnMetadata: unknown },
+  ): Promise<{
     readonly matches: readonly {
       readonly id: string;
       readonly score: number;
       readonly metadata?: Readonly<Record<string, string>>;
     }[];
   }> {
+    if (
+      options.returnMetadata !== "all" &&
+      options.returnMetadata !== "indexed" &&
+      options.returnMetadata !== "none"
+    ) {
+      throw new Error(
+        `Vectorize rejects returnMetadata=${JSON.stringify(options.returnMetadata)}.`,
+      );
+    }
+    const maxTopK = options.returnMetadata === "all" ? 50 : 100;
+    if (!Number.isInteger(options.topK) || options.topK < 1 || options.topK > maxTopK) {
+      throw new Error(
+        `Vectorize rejects topK=${options.topK} with returnMetadata=${options.returnMetadata}.`,
+      );
+    }
     return {
-      matches: [...this.records.entries()].map(([id, record]) => ({
-        id,
-        score: record.values.reduce((total, value, index) => total + value * vector[index]!, 0),
-        metadata: record.metadata,
-      })),
+      matches: [...this.records.entries()]
+        .map(([id, record]) => ({
+          id,
+          score: record.values.reduce((total, value, index) => total + value * vector[index]!, 0),
+          ...(options.returnMetadata === "none" ? {} : { metadata: record.metadata }),
+        }))
+        .sort((left, right) => right.score - left.score)
+        .slice(0, options.topK),
     };
   }
 }
@@ -90,6 +111,15 @@ describe("cloud vector index contract", () => {
   it("preserves privacy filtering and deletion with Cloudflare Vectorize", async () => {
     await verifyContract(new CloudflareVectorizeIndex(new FakeVectorize()));
     expect.assertions(2);
+  });
+
+  it("keeps large Cloudflare Vectorize searches within the metadata query limits", async () => {
+    const index = new CloudflareVectorizeIndex(new FakeVectorize());
+    await index.upsert(records);
+
+    await expect(index.search({ vector: [1, 0], privacy: ["P1"], limit: 40 })).resolves.toEqual([
+      { id: "public", score: 1 },
+    ]);
   });
 
   it("preserves privacy filtering and deletion with DynamoDB", async () => {

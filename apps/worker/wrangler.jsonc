@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
+  // Access protects only the custom domain; workers.dev and preview URLs would bypass it.
+  "workers_dev": false,
+  "preview_urls": false,
   "assets": {
     "directory": "../web/dist",
     "not_found_handling": "single-page-application",
