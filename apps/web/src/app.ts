@@ -137,15 +137,21 @@ function setPendingCount(count: number): void {
     const element = byId(id);
     if (element.textContent === String(count)) continue;
     element.textContent = String(count);
-    element.classList.remove("bump");
-    void element.offsetWidth;
-    element.classList.add("bump");
+    if (reducedMotion.matches) continue;
+    element.animate(
+      [
+        { transform: "scale(1)" },
+        { transform: "scale(1.18)", offset: 0.4 },
+        { transform: "scale(1)" },
+      ],
+      { duration: 320, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+    );
   }
 }
 
 function proposalCard(proposal: Proposal, index: number): string {
   const id = escapeHtml(proposal.id);
-  return `<article class="card inbox-card" tabindex="0" data-proposal-id="${id}" style="--i: ${Math.min(index, 8)}" aria-labelledby="proposal-title-${id}" aria-describedby="review-shortcuts"><div class="card-body"><p class="card-tags"><span class="badge badge-kind">${escapeHtml(proposal.assertion.kind)}</span><span class="badge">${escapeHtml(proposal.assertion.privacy)}</span></p><h3 id="proposal-title-${id}">${escapeHtml(proposal.assertion.object)}</h3><p class="meta">根拠 ${proposal.assertion.evidenceIds.length} 件 ・ ${escapeHtml(new Date(proposal.createdAt).toLocaleString("ja-JP"))}</p></div><div class="actions"><button type="button" data-compose="approve">承認<kbd>A</kbd></button><button type="button" class="reject" data-compose="reject">却下<kbd>R</kbd></button></div></article>`;
+  return `<article class="card inbox-card" tabindex="0" data-proposal-id="${id}" style="--i: ${index}" aria-labelledby="proposal-title-${id}" aria-describedby="review-shortcuts"><div class="card-body"><p class="card-tags"><span class="badge badge-kind">${escapeHtml(proposal.assertion.kind)}</span><span class="badge">${escapeHtml(proposal.assertion.privacy)}</span></p><h3 id="proposal-title-${id}">${escapeHtml(proposal.assertion.object)}</h3><p class="meta">根拠 ${proposal.assertion.evidenceIds.length} 件 ・ ${escapeHtml(new Date(proposal.createdAt).toLocaleString("ja-JP"))}</p></div><div class="actions"><button type="button" data-compose="approve">${ACTION_LABELS.approve}<kbd>A</kbd></button><button type="button" class="reject" data-compose="reject">${ACTION_LABELS.reject}<kbd>R</kbd></button></div></article>`;
 }
 
 function renderProposals(): void {
@@ -178,14 +184,14 @@ function closeComposer(restoreFocus: boolean): void {
   if (form === null) return;
   const card = form.closest<HTMLElement>(".inbox-card");
   form.remove();
-  card?.classList.remove("composing", "composing--approve", "composing--reject");
+  card?.classList.remove("composing--reject");
   if (restoreFocus && card !== null) focusCard(card);
 }
 
 function openComposer(card: HTMLElement, action: ReviewAction): void {
   closeComposer(false);
   const label = ACTION_LABELS[action];
-  card.classList.add("composing", `composing--${action}`);
+  card.classList.toggle("composing--reject", action === "reject");
   card.insertAdjacentHTML(
     "beforeend",
     `<form class="reason-form" data-action="${action}" novalidate><label for="reason-input">${label}する理由</label><div class="reason-row"><input id="reason-input" name="reason" autocomplete="off" placeholder="${REASON_PLACEHOLDERS[action]}" aria-describedby="reason-hint" /><button type="submit" class="confirm confirm--${action}">${label}を確定</button><button type="button" class="secondary" data-cancel-review>キャンセル</button></div><p id="reason-hint" class="reason-hint">${REASON_HINT}</p></form>`,
@@ -193,14 +199,10 @@ function openComposer(card: HTMLElement, action: ReviewAction): void {
   card.querySelector<HTMLInputElement>("#reason-input")?.focus();
 }
 
-function leave(card: HTMLElement): Promise<void> {
-  if (reducedMotion.matches) return Promise.resolve();
+async function leave(card: HTMLElement): Promise<void> {
   card.style.height = `${card.offsetHeight}px`;
   card.classList.add("leaving");
-  return new Promise((resolve) => {
-    card.addEventListener("animationend", () => resolve(), { once: true });
-    window.setTimeout(resolve, 450);
-  });
+  await Promise.allSettled(card.getAnimations().map((animation) => animation.finished));
 }
 
 async function dismissCard(card: HTMLElement, id: string): Promise<void> {

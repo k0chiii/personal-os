@@ -544,14 +544,6 @@ button.secondary {
   border-radius: 999px;
   background: var(--accent);
 }
-.bump {
-  animation: count-bump 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@keyframes count-bump {
-  40% {
-    transform: scale(1.18);
-  }
-}
 .shortcut-hint {
   display: flex;
   flex-wrap: wrap;
@@ -581,7 +573,7 @@ kbd {
 .inbox-card {
   outline: none;
   animation: card-enter 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  animation-delay: calc(var(--i, 0) * 35ms);
+  animation-delay: calc(min(var(--i, 0), 8) * 35ms);
   transition:
     border-color 0.16s,
     box-shadow 0.16s;
