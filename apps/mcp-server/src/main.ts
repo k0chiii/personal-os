@@ -11,8 +11,19 @@ import {
   ensureParentDirectory,
 } from "@personal-os/adapters-local";
 import { OllamaAdapter } from "@personal-os/adapters-ollama";
-import { DecisionSimulator, PersonalOsApplication, ProviderRouter } from "@personal-os/application";
-import { PRIVACY_CLASSES, type PrivacyClass } from "@personal-os/domain";
+import {
+  DecisionSimulator,
+  PersonalOsApplication,
+  ProviderRouter,
+  type AssertionExplanation,
+  type ProposePreferenceInput,
+} from "@personal-os/application";
+import {
+  ASSERTION_KINDS,
+  EPISTEMIC_ORIGINS,
+  PRIVACY_CLASSES,
+  type PrivacyClass,
+} from "@personal-os/domain";
 import { Temporal } from "temporal-polyfill";
 
 type JsonRpcId = string | number | null;
@@ -24,13 +35,30 @@ interface JsonRpcRequest {
   readonly params?: unknown;
 }
 
+const allowedPrivacySchema = { type: "array", items: { enum: PRIVACY_CLASSES } } as const;
+
+const proposalProperties = {
+  subjectId: { type: "string" },
+  object: { type: "string" },
+  evidenceIds: { type: "array", items: { type: "string" }, minItems: 1 },
+  epistemicOrigin: { enum: EPISTEMIC_ORIGINS, default: "agent_inference" },
+  validFrom: { type: "string", description: "ISO instant. Defaults to now." },
+  validUntil: { type: "string" },
+  privacy: { enum: PRIVACY_CLASSES },
+  actor: { type: "string" },
+  reason: { type: "string" },
+} as const;
+
+const proposalRequired = ["subjectId", "object", "evidenceIds", "privacy", "actor", "reason"];
+
 const tools = [
   {
     name: "personal_os_current",
     description: "Read the current Personal OS state.",
     inputSchema: {
       type: "object",
-      properties: { privacy: { type: "array", items: { type: "string" } } },
+      properties: { privacy: allowedPrivacySchema },
+      required: ["privacy"],
       additionalProperties: false,
     },
   },
@@ -41,10 +69,10 @@ const tools = [
       type: "object",
       properties: {
         query: { type: "string" },
-        privacy: { type: "array", items: { type: "string" } },
+        privacy: allowedPrivacySchema,
         at: { type: "string" },
       },
-      required: ["query"],
+      required: ["query", "privacy"],
       additionalProperties: false,
     },
   },
@@ -53,8 +81,8 @@ const tools = [
     description: "Explain an Assertion using its canonical Evidence provenance.",
     inputSchema: {
       type: "object",
-      properties: { assertionId: { type: "string" } },
-      required: ["assertionId"],
+      properties: { assertionId: { type: "string" }, privacy: allowedPrivacySchema },
+      required: ["assertionId", "privacy"],
       additionalProperties: false,
     },
   },
@@ -66,7 +94,7 @@ const tools = [
       properties: {
         task: { type: "string" },
         query: { type: "string" },
-        privacy: { type: "array", items: { type: "string" } },
+        privacy: allowedPrivacySchema,
         tokenBudget: { type: "integer", minimum: 1 },
         at: { type: "string" },
       },
@@ -82,10 +110,36 @@ const tools = [
       properties: {
         task: { type: "string" },
         query: { type: "string" },
-        privacy: { type: "array", items: { type: "string" } },
+        privacy: allowedPrivacySchema,
         tokenBudget: { type: "integer", minimum: 1 },
       },
       required: ["task", "query", "privacy", "tokenBudget"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "personal_os_propose_preference",
+    description:
+      "Propose a Preference for human review. Creates a pending Proposal, never an Assertion.",
+    inputSchema: {
+      type: "object",
+      properties: proposalProperties,
+      required: proposalRequired,
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "personal_os_propose_assertion",
+    description:
+      "Propose an Assertion of any kind for human review. Creates a pending Proposal, never an Assertion.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...proposalProperties,
+        kind: { enum: ASSERTION_KINDS },
+        predicate: { type: "string" },
+      },
+      required: [...proposalRequired, "kind"],
       additionalProperties: false,
     },
   },
@@ -149,21 +203,65 @@ function numberValue(input: Record<string, unknown>, key: string): number {
   return value;
 }
 
-function privacyValue(input: Record<string, unknown>, optional = false): readonly PrivacyClass[] {
+function enumValue<T extends string>(value: unknown, allowed: readonly T[], key: string): T {
+  const match = allowed.find((candidate) => candidate === value);
+  if (match === undefined) {
+    throw new Error(`${key} must be one of ${allowed.join(", ")}.`);
+  }
+  return match;
+}
+
+function privacyValue(input: Record<string, unknown>): readonly PrivacyClass[] {
   const value = input.privacy;
-  if (value === undefined && optional) {
-    return [...PRIVACY_CLASSES];
+  if (value === undefined) {
+    throw new Error("privacy is required.");
   }
   if (!Array.isArray(value)) {
     throw new Error("privacy must be an array.");
   }
-  return value.map((item) => {
-    const privacy = PRIVACY_CLASSES.find((candidate) => candidate === item);
-    if (privacy === undefined) {
-      throw new Error("privacy contains an unsupported class.");
-    }
-    return privacy;
-  });
+  return value.map((item) => enumValue(item, PRIVACY_CLASSES, "privacy"));
+}
+
+function evidenceIdsValue(input: Record<string, unknown>): readonly string[] {
+  const value = input.evidenceIds;
+  if (!Array.isArray(value) || value.length === 0 || !value.every((id) => typeof id === "string")) {
+    throw new Error("evidenceIds must be a non-empty array of strings.");
+  }
+  return value;
+}
+
+function proposalInput(input: Record<string, unknown>): ProposePreferenceInput {
+  const origin = input.epistemicOrigin ?? "agent_inference";
+  const validFrom = optionalStringValue(input, "validFrom");
+  const validUntil = optionalStringValue(input, "validUntil");
+  return {
+    subjectId: stringValue(input, "subjectId"),
+    object: stringValue(input, "object"),
+    evidenceIds: evidenceIdsValue(input),
+    epistemicOrigin: enumValue(origin, EPISTEMIC_ORIGINS, "epistemicOrigin"),
+    validFrom: validFrom === null ? Temporal.Now.instant() : Temporal.Instant.from(validFrom),
+    validUntil: validUntil === null ? null : Temporal.Instant.from(validUntil),
+    privacy: enumValue(input.privacy, PRIVACY_CLASSES, "privacy"),
+    createdBy: "agent",
+    actor: stringValue(input, "actor"),
+    reason: stringValue(input, "reason"),
+  };
+}
+
+async function explainWithinPrivacy(
+  application: PersonalOsApplication,
+  input: Record<string, unknown>,
+): Promise<AssertionExplanation> {
+  const assertionId = stringValue(input, "assertionId");
+  const allowed = new Set(privacyValue(input));
+  const explanation = await application.explainAssertion(assertionId);
+  if (!allowed.has(explanation.assertion.privacy)) {
+    throw new Error(`Assertion not found: ${assertionId}.`);
+  }
+  return {
+    assertion: explanation.assertion,
+    evidence: explanation.evidence.filter((item) => allowed.has(item.privacy)),
+  };
 }
 
 async function createRuntime(): Promise<{
@@ -204,22 +302,22 @@ async function callTool(
   const at = optionalStringValue(input, "at");
   switch (params.name) {
     case "personal_os_current":
-      return runtime.application.getCurrentState({ privacy: privacyValue(input, true) });
+      return runtime.application.getCurrentState({ privacy: privacyValue(input) });
     case "personal_os_search":
       return Promise.all([
         runtime.application.searchAssertions({
           query: stringValue(input, "query"),
-          privacy: privacyValue(input, true),
+          privacy: privacyValue(input),
           ...(at === null ? {} : { asOf: Temporal.Instant.from(at) }),
         }),
         runtime.application.searchDecisions({
           query: stringValue(input, "query"),
-          privacy: privacyValue(input, true),
+          privacy: privacyValue(input),
           ...(at === null ? {} : { asOf: Temporal.Instant.from(at) }),
         }),
       ]).then(([assertions, decisions]) => ({ assertions, decisions }));
     case "personal_os_explain":
-      return runtime.application.explainAssertion(stringValue(input, "assertionId"));
+      return explainWithinPrivacy(runtime.application, input);
     case "personal_os_context":
       return runtime.application.buildContext({
         task: stringValue(input, "task"),
@@ -236,6 +334,16 @@ async function callTool(
         tokenBudget: numberValue(input, "tokenBudget"),
         preferLocal: true,
       });
+    case "personal_os_propose_preference":
+      return runtime.application.proposePreference(proposalInput(input));
+    case "personal_os_propose_assertion": {
+      const predicate = optionalStringValue(input, "predicate");
+      return runtime.application.proposeAssertion({
+        ...proposalInput(input),
+        kind: enumValue(input.kind, ASSERTION_KINDS, "kind"),
+        ...(predicate === null ? {} : { predicate }),
+      });
+    }
     default:
       throw new Error(`Unknown tool: ${params.name}.`);
   }
