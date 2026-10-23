@@ -243,7 +243,7 @@ async function submitReview(form: HTMLFormElement): Promise<void> {
   if (!(input instanceof SlInput) || hint === null) return;
   const reason = input.value.trim();
   if (reason.length === 0) {
-    input.toggleAttribute("data-invalid", true);
+    input.toggleAttribute("data-missing", true);
     hint.textContent = "理由を入力してください。";
     hint.classList.add("error");
     input.focus();
@@ -281,8 +281,8 @@ document.addEventListener("submit", (event) => {
 document.addEventListener("sl-input", (event) => {
   const input = event.target;
   if (!(input instanceof SlInput) || input.id !== "reason-input") return;
-  if (!input.hasAttribute("data-invalid")) return;
-  input.removeAttribute("data-invalid");
+  if (!input.hasAttribute("data-missing")) return;
+  input.removeAttribute("data-missing");
   const hint = byId("reason-hint");
   hint.textContent = REASON_HINT;
   hint.classList.remove("error");

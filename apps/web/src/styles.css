@@ -62,6 +62,8 @@
   --sl-focus-ring-color: rgba(185, 242, 101, 0.55);
   --sl-focus-ring-width: 3px;
   --sl-input-color: var(--ink);
+  --sl-input-color-hover: var(--ink);
+  --sl-input-color-focus: var(--ink);
   --sl-input-background-color: #fafbf9;
   --sl-input-background-color-hover: #fafbf9;
   --sl-input-background-color-focus: var(--paper);
@@ -303,6 +305,8 @@ svg {
 }
 .connection-form {
   --sl-input-color: white;
+  --sl-input-color-hover: white;
+  --sl-input-color-focus: white;
   --sl-input-label-color: #858d83;
   --sl-input-label-font-size-small: 0.67rem;
   --sl-input-background-color: #1a1d18;
@@ -320,6 +324,9 @@ svg {
   color: #747b72;
   font-size: 0.64rem;
   line-height: 1.5;
+}
+.connection-form sl-input {
+  min-width: 0;
 }
 .connection-form sl-button {
   margin-top: 0.2rem;
@@ -688,8 +695,11 @@ kbd {
 .reason-form sl-input::part(form-control-label) {
   font-weight: 600;
 }
-.reason-form sl-input[data-invalid]::part(base) {
-  border-color: var(--danger);
+.reason-form sl-input[data-missing] {
+  --sl-input-border-color: var(--danger);
+  --sl-input-border-color-hover: var(--danger);
+  --sl-input-border-color-focus: var(--danger);
+  --sl-input-focus-ring-color: rgba(185, 78, 59, 0.16);
 }
 .reason-actions {
   display: flex;
