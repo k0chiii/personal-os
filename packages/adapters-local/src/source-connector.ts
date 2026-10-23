@@ -34,7 +34,8 @@ async function filesBelow(root: string, directory = root): Promise<readonly stri
       files.push(relative(root, path));
     }
   }
-  return files.sort((left, right) => left.localeCompare(right));
+  // Code-unit order, so the sort agrees with the `file > cursor` comparison in pull().
+  return files.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
 export class DirectorySourceConnector implements SourceConnectorPort {

@@ -61,13 +61,14 @@ export class DecisionCritic {
       });
     }
 
-    if (input.prediction !== null && input.context.rawEvidence.length > 0) {
+    if (input.prediction !== null) {
+      const prediction = input.prediction;
       const knownIds = [
         ...input.context.relevantAssertions.map((assertion) => assertion.id),
         ...input.context.relevantDecisions.map((decision) => decision.id),
         ...input.context.rawEvidence.map((item) => item.evidence.id),
       ];
-      if (!knownIds.some((id) => input.prediction?.includes(id))) {
+      if (!knownIds.some((id) => prediction.includes(id))) {
         issues.push({
           code: "uncited_prediction",
           severity: "warning",

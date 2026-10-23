@@ -38,6 +38,12 @@ Parameters:
     Type: Number
     Default: 20
     MinValue: 1
+  OwnerSubject:
+    Type: String
+    Default: ""
+    Description: >-
+      Cognito `sub` of the single owner. The API rejects every other authenticated user and
+      fails closed while this is empty.
 
 Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
@@ -120,6 +126,8 @@ Resources:
       UsernameAttributes: [email]
       AutoVerifiedAttributes: [email]
       DeletionProtection: ACTIVE
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
       Policies:
         PasswordPolicy:
           MinimumLength: 14
@@ -180,6 +188,7 @@ Resources:
           OPENAI_API_KEY_PARAMETER: !Ref OpenAiApiKeyParameterName
           OPENAI_MODEL: !Ref OpenAiModel
           RATE_LIMIT_PER_MINUTE: !Ref RateLimitPerMinute
+          OWNER_SUBJECT: !Ref OwnerSubject
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref EventTable

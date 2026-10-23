@@ -20,7 +20,7 @@ import { createApiHandler, FixedWindowRateLimiter } from "@personal-os/api";
 import { DecisionSimulator, PersonalOsApplication, ProviderRouter } from "@personal-os/application";
 import { HybridAssertionRetriever, LocalHashEmbedding } from "@personal-os/retrieval";
 
-const AUTHENTICATED_SUBJECT_HEADER = "x-personal-os-authenticated-subject";
+import { AUTHENTICATED_SUBJECT_HEADER, ownerAuthenticator } from "./owner-authenticator.ts";
 
 interface Runtime {
   readonly handle: (request: Request) => Promise<Response>;
@@ -68,6 +68,7 @@ async function createRuntime(): Promise<Runtime> {
   const eventTableName = requiredEnvironment("EVENT_TABLE_NAME");
   const projectionTableName = requiredEnvironment("PROJECTION_TABLE_NAME");
   const evidenceBucketName = requiredEnvironment("EVIDENCE_BUCKET_NAME");
+  const ownerSubject = requiredEnvironment("OWNER_SUBJECT").trim();
   const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
     marshallOptions: { removeUndefinedValues: true },
   });
@@ -113,12 +114,7 @@ async function createRuntime(): Promise<Runtime> {
       rateLimiter: new FixedWindowRateLimiter({
         limit: Number.parseInt(process.env.RATE_LIMIT_PER_MINUTE ?? "120", 10),
       }),
-      authenticator: {
-        authenticate(request: Request) {
-          const subject = request.headers.get(AUTHENTICATED_SUBJECT_HEADER)?.trim();
-          return subject === undefined || subject.length === 0 ? null : { subject };
-        },
-      },
+      authenticator: ownerAuthenticator(ownerSubject),
       ...(simulator === undefined ? {} : { simulator }),
     }),
   };

@@ -35,9 +35,10 @@ it("serves MCP initialize, tool discovery, and read calls over stdio", async () 
         .map((request) => JSON.stringify(request))
         .join("\n") + "\n",
     );
+    // "close" fires after stdout and stderr have drained; "exit" can precede the final chunks.
     const exitCode = await new Promise<number | null>((resolve, reject) => {
       child.once("error", reject);
-      child.once("exit", resolve);
+      child.once("close", resolve);
     });
     expect(exitCode).toBe(0);
     expect(stderr).toBe("");

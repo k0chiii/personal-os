@@ -84,8 +84,8 @@ function parseOpenAiResponse(value: unknown, model: string): GenerateResult {
   if (!isRecord(value)) {
     throw new StructuredOutputInvalid("openai");
   }
-  const outputText = value.output_text;
-  if (typeof outputText !== "string") {
+  const outputText = outputTextOf(value.output);
+  if (outputText === null) {
     throw new StructuredOutputInvalid("openai");
   }
   const usage = isRecord(value.usage) ? value.usage : {};
@@ -99,6 +99,25 @@ function parseOpenAiResponse(value: unknown, model: string): GenerateResult {
     outputTokens: nullableNumber(usage.output_tokens),
     estimatedUsd: null,
   };
+}
+
+// The REST Responses payload has no top-level output_text; only the SDK synthesizes that field.
+function outputTextOf(output: unknown): string | null {
+  if (!Array.isArray(output)) {
+    return null;
+  }
+  const texts: string[] = [];
+  for (const item of output) {
+    if (!isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
+      continue;
+    }
+    for (const part of item.content) {
+      if (isRecord(part) && part.type === "output_text" && typeof part.text === "string") {
+        texts.push(part.text);
+      }
+    }
+  }
+  return texts.length === 0 ? null : texts.join("");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

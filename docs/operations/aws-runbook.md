@@ -60,9 +60,15 @@ pnpm aws:contract
 
 The command refuses resources whose names do not contain `contract`. It covers S3 Evidence bytes,
 DynamoDB canonical events and projections, optimistic concurrency, idempotency, rebuild, integrity,
-and DynamoDB vector retrieval. Remove the disposable resources after recording the result:
+and DynamoDB vector retrieval. Remove the disposable resources after recording the result.
+CloudFormation cannot delete a non-empty bucket, so empty the contract Evidence bucket first. The
+`case` guard refuses any bucket name that does not contain `contract`:
 
 ```bash
+case "$EVIDENCE_BUCKET_NAME" in
+  *contract*) aws s3 rm "s3://$EVIDENCE_BUCKET_NAME" --recursive ;;
+  *) echo "refusing to empty non-contract bucket $EVIDENCE_BUCKET_NAME" >&2; exit 1 ;;
+esac
 aws cloudformation delete-stack --stack-name personal-os-contract
 aws cloudformation wait stack-delete-complete --stack-name personal-os-contract
 ```
@@ -103,13 +109,27 @@ pnpm aws:deploy -- \
     RateLimitPerMinute=120 \
     ApiThrottleRateLimit=10 \
     ApiThrottleBurstLimit=20 \
-    OpenAiApiKeyParameterName=/personal-os/openai-api-key
+    OpenAiApiKeyParameterName=/personal-os/openai-api-key \
+    OwnerSubject=<Cognito sub of the owner>
 ```
 
 Confirm the CloudFormation change set and SNS email subscription. Read the API URL, Cognito user
-pool, client ID, tables, and bucket from stack outputs. Create the first Cognito user using the AWS
-console or the organization-approved identity workflow. `GET /health` is public; all `/v1/*`
-routes require a Cognito JWT.
+pool, client ID, tables, and bucket from stack outputs. The user pool only accepts users created by
+an administrator; create the owner using the AWS console or the organization-approved identity
+workflow. `GET /health` is public; all `/v1/*` routes require a Cognito JWT whose `sub` equals
+`OwnerSubject`.
+
+`OwnerSubject` is unknown until the owner exists, so the first deploy leaves it empty. The Lambda
+then fails closed and answers every request, including `GET /health`, with HTTP 500. Read the
+owner's `sub` and redeploy with the same parameters plus `OwnerSubject`:
+
+```bash
+aws cognito-idp admin-get-user \
+  --user-pool-id '<UserPoolId>' \
+  --username owner@example.com \
+  --query "UserAttributes[?Name=='sub'].Value" \
+  --output text
+```
 
 The web build is in `apps/web/dist`. Host those static files on the approved HTTPS origin, set that
 origin as `AllowedOrigin`, then enter the API output URL and a Cognito access token in the console.

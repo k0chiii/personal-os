@@ -31,8 +31,8 @@ describe("Cloudflare D1 HTTP operator adapter", () => {
     expect(new Headers(requests[0]?.init.headers).get("authorization")).toBe("Bearer secret-token");
   });
 
-  it("executes maintenance batches in order", async () => {
-    const queries: string[] = [];
+  it("sends a maintenance batch as one transactional request", async () => {
+    const bodies: string[] = [];
     const database = new D1HttpDatabase({
       accountId: "account-id",
       databaseId: "database-id",
@@ -41,21 +41,67 @@ describe("Cloudflare D1 HTTP operator adapter", () => {
         if (typeof init?.body !== "string") {
           throw new TypeError("Expected a JSON string request body.");
         }
-        const body: unknown = JSON.parse(init.body);
-        if (typeof body !== "object" || body === null || !("sql" in body)) {
-          throw new TypeError("Expected a SQL request body.");
-        }
-        const sql = Reflect.get(body, "sql");
-        if (typeof sql !== "string") {
-          throw new TypeError("Expected SQL to be a string.");
-        }
-        queries.push(sql);
-        return Response.json({ success: true, result: [{ success: true, results: [] }] });
+        bodies.push(init.body);
+        return Response.json({
+          success: true,
+          result: [
+            { success: true, results: [] },
+            { success: true, results: [{ id: "second" }] },
+          ],
+        });
       },
     });
 
-    await database.batch([database.prepare("FIRST"), database.prepare("SECOND")]);
-    expect(queries).toEqual(["FIRST", "SECOND"]);
+    const results = await database.batch([
+      database.prepare("FIRST"),
+      database.prepare("SECOND WHERE id = ?").bind("second"),
+    ]);
+
+    expect(bodies).toEqual([
+      JSON.stringify({
+        batch: [
+          { sql: "FIRST", params: [] },
+          { sql: "SECOND WHERE id = ?", params: ["second"] },
+        ],
+      }),
+    ]);
+    expect(results).toEqual([
+      { success: true, results: [] },
+      { success: true, results: [{ id: "second" }] },
+    ]);
+  });
+
+  it("rejects a batch whose result count does not match its statements", async () => {
+    const database = new D1HttpDatabase({
+      accountId: "account-id",
+      databaseId: "database-id",
+      apiToken: "secret-token",
+      fetch: async () => Response.json({ success: true, result: [{ success: true, results: [] }] }),
+    });
+
+    await expect(
+      database.batch([database.prepare("FIRST"), database.prepare("SECOND")]),
+    ).rejects.toThrow("Cloudflare D1 returned 1 results for 2 batched statements.");
+  });
+
+  it("fails the whole batch when any statement result is unsuccessful", async () => {
+    const database = new D1HttpDatabase({
+      accountId: "account-id",
+      databaseId: "database-id",
+      apiToken: "secret-token",
+      fetch: async () =>
+        Response.json({
+          success: true,
+          result: [
+            { success: true, results: [] },
+            { success: false, results: [] },
+          ],
+        }),
+    });
+
+    await expect(
+      database.batch([database.prepare("FIRST"), database.prepare("SECOND")]),
+    ).rejects.toThrow("Cloudflare D1 query was not successful (HTTP 200).");
   });
 
   it("reports API failure without echoing SQL or parameters", async () => {

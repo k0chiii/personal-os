@@ -51,7 +51,10 @@ rtk aws ssm put-parameter \
 ## 4. デプロイ
 
 `AllowedOrigin` は Web UI の正確なオリジンに置き換えます。通知が不要なら `AlertEmail` と
-`OpenAiApiKeyParameterName` を空にできます。
+`OpenAiApiKeyParameterName` を空にできます。`OwnerSubject` は所有者の Cognito `sub` で、
+初回はまだ存在しないため空のままデプロイします。空の間 Lambda はフェイルクローズし、
+`GET /health` を含む全リクエストに HTTP 500 を返します。手順 5 で所有者を作成した後、
+`sub` を取得して `OwnerSubject=<sub>` を加えた同じパラメータで再デプロイしてください。
 
 ```bash
 rtk pnpm aws:deploy -- \
@@ -102,7 +105,16 @@ rtk aws cognito-idp admin-set-user-password \
   --username owner@example.com \
   --password "$PERSONAL_OS_PASSWORD" \
   --permanent
+
+rtk aws cognito-idp admin-get-user \
+  --user-pool-id '<UserPoolId>' \
+  --username owner@example.com \
+  --query "UserAttributes[?Name=='sub'].Value" \
+  --output text
 ```
+
+最後のコマンドが返す `sub` を `OwnerSubject` として手順 4 のデプロイを再実行します。ユーザー
+プールは管理者作成のみを許可しており、セルフサインアップはできません。
 
 Web UI が要求するアクセストークンは、次の認証結果の `AccessToken` です。認証結果をログや
 共有画面へ残さないでください。

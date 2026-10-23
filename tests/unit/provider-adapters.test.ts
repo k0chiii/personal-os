@@ -14,7 +14,25 @@ describe("LLM provider adapters", () => {
         const headers = new Headers(init?.headers);
         authorization = headers.get("authorization") ?? "";
         return Response.json({
-          output_text: "prediction",
+          id: "resp_test",
+          object: "response",
+          output: [
+            {
+              type: "reasoning",
+              id: "rs_test",
+              summary: [],
+            },
+            {
+              type: "message",
+              id: "msg_test",
+              role: "assistant",
+              status: "completed",
+              content: [
+                { type: "output_text", text: "predic", annotations: [] },
+                { type: "output_text", text: "tion", annotations: [] },
+              ],
+            },
+          ],
           usage: {
             input_tokens: 12,
             input_tokens_details: { cached_tokens: 3 },
