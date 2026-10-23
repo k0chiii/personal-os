@@ -9,6 +9,7 @@ import {
   FileRawEvidenceStore,
   NodeContentHasher,
   NotionExportSourceConnector,
+  type NotionExportPage,
   SqliteEventStore,
   SqliteProjection,
   SystemClock,
@@ -226,18 +227,30 @@ async function run(args: readonly string[]): Promise<void> {
       root: resolve(id),
       privacy: oneOf(requiredFlag(parsed, "privacy"), PRIVACY_CLASSES, "privacy"),
     };
-    writeJson(
-      await new SourceIngestionService(application).ingest({
-        connector:
-          format === "notion-export"
-            ? new NotionExportSourceConnector(connectorInput)
-            : new DirectorySourceConnector(connectorInput),
+    const sync = (connector: Parameters<SourceIngestionService["ingest"]>[0]["connector"]) =>
+      new SourceIngestionService(application).ingest({
+        connector,
         cursor: cursor ?? null,
         ...(limit === undefined ? {} : { limit: Number.parseInt(limit, 10) }),
         actor: optionalFlag(parsed, "actor") ?? "local-user",
         reason: optionalFlag(parsed, "reason") ?? `Synchronize a ${format} Source Connector`,
-      }),
-    );
+      });
+    if (format === "directory") {
+      writeJson(await sync(new DirectorySourceConnector(connectorInput)));
+      return;
+    }
+    // SourceIngestionResult carries no skips, so keep the page the connector handed to ingestion.
+    const notion = new NotionExportSourceConnector(connectorInput);
+    let skipped: NotionExportPage["skipped"] = [];
+    const result = await sync({
+      connectorId: notion.connectorId,
+      pull: async (input) => {
+        const page = await notion.pull(input);
+        skipped = page.skipped;
+        return page;
+      },
+    });
+    writeJson({ ...result, skipped });
     return;
   }
 

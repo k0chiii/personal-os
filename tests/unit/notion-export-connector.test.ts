@@ -69,7 +69,7 @@ it("imports every exported page as Evidence and creates no Proposal or Assertion
     reason: "Sync Notion export",
   });
 
-  expect(result).toMatchObject({ imported: 3, deduplicated: 1, nextCursor: null, skipped: [] });
+  expect(result).toMatchObject({ imported: 3, deduplicated: 1, nextCursor: null });
   const evidence = await system.projection.listEvidence();
   expect(new Set(evidence.map((item) => item.sourceUri))).toEqual(
     new Set([HOME, READING, WEEKLY].map((id) => `https://www.notion.so/${id}`)),

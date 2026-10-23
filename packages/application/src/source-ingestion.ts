@@ -1,4 +1,4 @@
-import type { SourceConnectorPort, SourceSkip } from "@personal-os/ports";
+import type { SourceConnectorPort } from "@personal-os/ports";
 import { Temporal } from "temporal-polyfill";
 
 import { PersonalOsApplication } from "./personal-os.ts";
@@ -9,7 +9,6 @@ export interface SourceIngestionResult {
   readonly imported: number;
   readonly deduplicated: number;
   readonly evidenceIds: readonly string[];
-  readonly skipped: readonly SourceSkip[];
 }
 
 export class SourceIngestionService {
@@ -59,7 +58,6 @@ export class SourceIngestionService {
       imported,
       deduplicated,
       evidenceIds,
-      skipped: page.skipped,
     };
   }
 }

@@ -68,7 +68,7 @@ export class DirectorySourceConnector implements SourceConnectorPort {
         };
       }),
     );
-    return { documents, skipped: [], nextCursor };
+    return { documents, nextCursor };
   }
 }
 

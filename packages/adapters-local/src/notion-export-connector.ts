@@ -2,14 +2,18 @@ import { readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
 import type { EvidenceSourceType, PrivacyClass } from "@personal-os/domain";
-import type {
-  SourceConnectorPort,
-  SourceDocument,
-  SourcePage,
-  SourceSkip,
-} from "@personal-os/ports";
+import type { SourceConnectorPort, SourceDocument, SourcePage } from "@personal-os/ports";
 
 import { filesBelow, pageAfter } from "./directory-files.ts";
+
+export interface NotionExportSkip {
+  readonly externalId: string;
+  readonly reason: string;
+}
+
+export interface NotionExportPage extends SourcePage {
+  readonly skipped: readonly NotionExportSkip[];
+}
 
 // Notion's "Markdown & CSV" and "HTML" exports name each page `<Title> <32 hex page id>.<ext>`.
 const PAGE_FILE = /^.* ([0-9a-f]{32})\.(md|html)$/u;
@@ -55,7 +59,7 @@ export class NotionExportSourceConnector implements SourceConnectorPort {
   async pull(input: {
     readonly cursor: string | null;
     readonly limit: number;
-  }): Promise<SourcePage> {
+  }): Promise<NotionExportPage> {
     const files = await filesBelow(
       this.#root,
       (name) => FORMATS[extname(name).toLocaleLowerCase()] !== undefined,
@@ -69,7 +73,7 @@ export class NotionExportSourceConnector implements SourceConnectorPort {
     }
     const { page, nextCursor } = pageAfter(files, input.cursor, input.limit);
     const results = await Promise.all(
-      page.map(async (relativePath): Promise<SourceDocument | SourceSkip> => {
+      page.map(async (relativePath): Promise<SourceDocument | NotionExportSkip> => {
         const pageId = notionPageId(relativePath);
         if (pageId === null) {
           return { externalId: relativePath, reason: "file name has no Notion page id" };
@@ -98,7 +102,7 @@ export class NotionExportSourceConnector implements SourceConnectorPort {
     );
     return {
       documents: results.filter((result): result is SourceDocument => "content" in result),
-      skipped: results.filter((result): result is SourceSkip => "reason" in result),
+      skipped: results.filter((result): result is NotionExportSkip => "reason" in result),
       nextCursor,
     };
   }
