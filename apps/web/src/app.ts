@@ -294,7 +294,8 @@ document.addEventListener("keydown", (event) => {
     openComposer(card, command.action);
     return;
   }
-  const fromPage = target === document.body || target === byId("main");
+  const fromPage =
+    target === document.body || target === byId("main") || target.closest("#review-view") !== null;
   if (card === null && (!fromPage || event.key.startsWith("Arrow"))) return;
   const nextId = movedId(
     proposals.map((proposal) => proposal.id),
