@@ -8,6 +8,7 @@ import {
   DirectorySourceConnector,
   FileRawEvidenceStore,
   NodeContentHasher,
+  NotionExportSourceConnector,
   SqliteEventStore,
   SqliteProjection,
   SystemClock,
@@ -35,7 +36,7 @@ Commands:
   personal evidence purge <uuidv7> --actor <name> --reason <text>
   personal preference propose --subject <uuidv7> --value <text> --evidence <uuidv7[,uuidv7]> --valid-from <instant> --privacy <P0|P1|P2|P3> [--origin <origin>] [--created-by <agent|user>] [--actor <name>] [--reason <text>]
   personal intent propose --kind <goal|project|artifact|research_topic|value|belief|constraint> --subject <uuidv7> --value <text> --evidence <uuidv7[,uuidv7]> --valid-from <instant> --privacy <P0|P1|P2|P3> [--predicate <name>] [--origin <origin>] [--created-by <agent|user>] [--actor <name>] [--reason <text>]
-  personal source sync <directory> --privacy <P0|P1|P2|P3> [--cursor <path>] [--limit <number>] [--actor <name>] [--reason <text>]
+  personal source sync <directory> --privacy <P0|P1|P2|P3> [--format <directory|notion-export>] [--cursor <path>] [--limit <number>] [--actor <name>] [--reason <text>]
   personal retention run --before <instant> --privacy <P0,P1,P2,P3> --actor <name> --reason <text>
   personal proposal approve <uuidv7> --actor <name> --reason <text> [--edit <text>]
   personal proposal reject <uuidv7> --actor <name> --reason <text>
@@ -60,7 +61,11 @@ Commands:
 
 State defaults to .personal-os in the current directory. Set PERSONAL_OS_HOME to override it.
 Encrypted backups require PERSONAL_OS_BACKUP_KEY containing a base64-encoded 32-byte key.
+Source sync --format notion-export reads an unzipped Notion "Markdown & CSV" or "HTML" export directory.
+It imports each page as Evidence only, reports skipped files with a reason, and never creates Assertions.
 `;
+
+const SOURCE_FORMATS = ["directory", "notion-export"] as const;
 
 interface ParsedArguments {
   readonly positional: readonly string[];
@@ -216,16 +221,21 @@ async function run(args: readonly string[]): Promise<void> {
     }
     const cursor = optionalFlag(parsed, "cursor");
     const limit = optionalFlag(parsed, "limit");
+    const format = oneOf(optionalFlag(parsed, "format") ?? "directory", SOURCE_FORMATS, "format");
+    const connectorInput = {
+      root: resolve(id),
+      privacy: oneOf(requiredFlag(parsed, "privacy"), PRIVACY_CLASSES, "privacy"),
+    };
     writeJson(
       await new SourceIngestionService(application).ingest({
-        connector: new DirectorySourceConnector({
-          root: resolve(id),
-          privacy: oneOf(requiredFlag(parsed, "privacy"), PRIVACY_CLASSES, "privacy"),
-        }),
+        connector:
+          format === "notion-export"
+            ? new NotionExportSourceConnector(connectorInput)
+            : new DirectorySourceConnector(connectorInput),
         cursor: cursor ?? null,
         ...(limit === undefined ? {} : { limit: Number.parseInt(limit, 10) }),
         actor: optionalFlag(parsed, "actor") ?? "local-user",
-        reason: optionalFlag(parsed, "reason") ?? "Synchronize a directory Source Connector",
+        reason: optionalFlag(parsed, "reason") ?? `Synchronize a ${format} Source Connector`,
       }),
     );
     return;
