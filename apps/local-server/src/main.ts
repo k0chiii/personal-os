@@ -58,7 +58,6 @@ async function createApplication(stateRoot: string): Promise<PersonalOsApplicati
   });
 }
 
-// Mirrors run_worker_first in apps/worker/wrangler.jsonc.
 function isApiPath(pathname: string): boolean {
   return pathname === "/health" || pathname.startsWith("/v1/");
 }

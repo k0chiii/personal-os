@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -83,6 +83,21 @@ it("serves health and the web index on one loopback origin", async () => {
     code: "not_found",
     detail: "No route matches the request.",
   });
+});
+
+it("routes the Worker's run_worker_first patterns to the API", async () => {
+  const wrangler = await readFile("apps/worker/wrangler.jsonc", "utf8");
+  const patterns: unknown = JSON.parse(
+    /"run_worker_first":\s*(\[[^\]]*\])/u.exec(wrangler)?.[1] ?? "null",
+  );
+  expect(patterns).toEqual(["/health", "/v1/*"]);
+  const origin = await startServer();
+  for (const path of ["/health", "/v1/worker-first-probe"]) {
+    const response = await fetch(new URL(path, origin));
+    expect(response.headers.get("content-type")).toBe("application/json");
+  }
+  const page = await fetch(new URL("/v1", origin));
+  expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
 });
 
 it("refuses to start without a web build", async () => {
