@@ -1,0 +1,14 @@
+{
+  "name": "@personal-os/local-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@personal-os/adapters-local": "workspace:*",
+    "@personal-os/api": "workspace:*",
+    "@personal-os/application": "workspace:*"
+  }
+}
