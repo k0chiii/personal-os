@@ -352,6 +352,37 @@ h1 {
   background: var(--danger);
 }
 
+.offline-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1180px;
+  margin: 0 auto 1.6rem;
+  padding: 1rem 1.2rem;
+  color: white;
+  border-left: 3px solid var(--danger);
+  border-radius: 0.85rem;
+  background: var(--sidebar);
+}
+.offline-notice[hidden] {
+  display: none;
+}
+.offline-notice strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.95rem;
+}
+.offline-notice p {
+  margin: 0;
+  color: var(--sidebar-muted);
+  font-size: 0.78rem;
+}
+.offline-notice code {
+  color: var(--accent);
+}
+
 .status-grid {
   display: grid;
   grid-template-columns: 1.15fr 1fr 1fr;

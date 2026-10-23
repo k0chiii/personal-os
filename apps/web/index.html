@@ -90,6 +90,16 @@
           </div>
         </header>
 
+        <section id="offline-notice" class="offline-notice" role="alert" hidden>
+          <div>
+            <strong>オフラインです</strong>
+            <p>
+              保存済みの画面を表示しています。API サーバー（ローカルでは
+              <code>pnpm personal:serve</code>）を起動してから再接続してください。
+            </p>
+          </div>
+          <sl-button size="small" variant="primary" data-reconnect>再接続</sl-button>
+        </section>
 
         <section class="status-grid" aria-label="概要">
           <article class="status-card status-card--primary">

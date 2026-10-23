@@ -59,11 +59,22 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error.";
 }
 
+class ApiUnreachableError extends Error {
+  constructor(options: ErrorOptions) {
+    super("API サーバーに接続できません", options);
+  }
+}
+
 async function api(path: string, init?: RequestInit): Promise<unknown> {
   const headers = new Headers(init?.headers);
   if (init?.body !== undefined) headers.set("content-type", "application/json");
   if (accessToken.length > 0) headers.set("authorization", `Bearer ${accessToken}`);
-  const response = await fetch(`${apiBase}${path}`, { ...init, headers });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}${path}`, { ...init, headers });
+  } catch (cause: unknown) {
+    throw new ApiUnreachableError({ cause });
+  }
   const text = await response.text();
   const value =
     text.length === 0
@@ -94,12 +105,21 @@ async function health(): Promise<void> {
     element.classList.add("ok");
     element.classList.remove("error");
     document.body.classList.add("api-connected");
+    byId("offline-notice").hidden = true;
   } catch (error: unknown) {
     element.innerHTML = `<span class="health-dot"></span><span>${escapeHtml(errorMessage(error))}</span>`;
     element.classList.remove("ok");
     element.classList.add("error");
     document.body.classList.remove("api-connected");
+    byId("offline-notice").hidden = !(error instanceof ApiUnreachableError);
   }
+}
+
+function reconnect(): void {
+  void health();
+  void loadProposals().catch((error: unknown) => toast(errorMessage(error)));
+  void loadTimeline().catch(() => undefined);
+  void loadState().catch(() => undefined);
 }
 
 interface Proposal {
@@ -445,6 +465,7 @@ document.addEventListener("click", (event) => {
   if (refresh === "timeline")
     void loadTimeline().catch((error: unknown) => toast(errorMessage(error)));
   if (refresh === "state") void loadState().catch((error: unknown) => toast(errorMessage(error)));
+  if (target.dataset.reconnect !== undefined) reconnect();
 });
 
 formById("connection-form").addEventListener("submit", (event) => {
@@ -453,7 +474,7 @@ formById("connection-form").addEventListener("submit", (event) => {
   accessToken = inputById("access-token").value.trim();
   localStorage.setItem("personal-os-api-base", apiBase);
   sessionStorage.setItem("personal-os-access-token", accessToken);
-  void Promise.all([health(), loadProposals(), loadTimeline(), loadState()]);
+  reconnect();
 });
 
 const searchForm = formById("search-form");
@@ -482,7 +503,5 @@ searchForm.addEventListener("submit", (event) => {
     .catch((error: unknown) => toast(errorMessage(error)));
 });
 
-void health();
-void loadProposals().catch((error: unknown) => toast(errorMessage(error)));
-void loadTimeline().catch(() => undefined);
-void loadState().catch(() => undefined);
+window.addEventListener("online", reconnect);
+reconnect();
