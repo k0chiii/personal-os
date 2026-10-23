@@ -71,7 +71,7 @@
         </div>
       </aside>
 
-      <main id="main" class="main-content">
+      <main id="main" class="main-content" tabindex="-1">
         <header class="topbar">
           <div>
             <p class="breadcrumb">
@@ -117,7 +117,9 @@
           <div class="section-heading">
             <div>
               <p class="kicker">Review queue</p>
-              <h2 id="review-title">審査待ちの提案</h2>
+              <h2 id="review-title" tabindex="-1">
+                審査待ちの提案 <span id="inbox-count" class="inbox-count">—</span>
+              </h2>
               <p>根拠を確認してから、記憶への追加を承認してください。</p>
             </div>
             <button class="secondary icon-button" data-refresh="review">
@@ -129,6 +131,10 @@
               更新
             </button>
           </div>
+          <p id="review-shortcuts" class="shortcut-hint" hidden>
+            <span><kbd>J</kbd><kbd>K</kbd> で移動</span><span><kbd>A</kbd> で承認</span
+            ><span><kbd>R</kbd> で却下</span><span><kbd>Esc</kbd> で取り消し</span>
+          </p>
           <div id="proposal-list" class="review-list" aria-live="polite">
             <div class="empty-state">
               <div>
