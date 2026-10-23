@@ -326,6 +326,9 @@ importers:
       '@personal-os/ports':
         specifier: workspace:*
         version: link:../ports
+      temporal-polyfill:
+        specifier: ^1.0.5
+        version: 1.0.5
 
   packages/adapters-ollama:
     dependencies:
