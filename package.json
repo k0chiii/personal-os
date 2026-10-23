@@ -9,6 +9,7 @@
     "build": "pnpm --filter @personal-os/web build",
     "personal": "node apps/cli/src/main.ts",
     "mcp": "node apps/mcp-server/src/main.ts",
+    "personal:serve": "node apps/local-server/src/main.ts",
     "aws:validate": "pnpm --filter @personal-os/aws-lambda validate",
     "aws:build": "pnpm --filter @personal-os/aws-lambda build",
     "aws:deploy": "pnpm --filter @personal-os/aws-lambda deploy",

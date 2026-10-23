@@ -234,6 +234,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/application
 
+  apps/local-server:
+    dependencies:
+      '@personal-os/adapters-local':
+        specifier: workspace:*
+        version: link:../../packages/adapters-local
+      '@personal-os/api':
+        specifier: workspace:*
+        version: link:../api
+      '@personal-os/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+
   apps/mcp-server:
     dependencies:
       '@personal-os/adapters-local':
