@@ -179,29 +179,11 @@ svg {
   border-radius: 50%;
   background: white;
 }
-.brand strong,
-.brand small {
-  display: block;
-}
 .brand strong {
+  display: block;
   font-size: 1.35rem;
   line-height: 1.15;
   letter-spacing: -0.03em;
-}
-.brand small {
-  margin-top: 0.1rem;
-  color: var(--sidebar-muted);
-  font-size: 0.67rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.nav-label {
-  margin: 0 0.75rem 0.6rem;
-  color: #666d64;
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 .primary-nav {
   display: grid;
@@ -283,18 +265,7 @@ svg {
   background: #69af31;
   box-shadow: 0 0 0 4px rgba(105, 175, 49, 0.12);
 }
-.connection-panel small,
 .connection-panel strong {
-  display: block;
-}
-.connection-panel small {
-  color: #687067;
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.connection-panel strong {
-  margin-top: 0.1rem;
   color: #cbd0c9;
   font-size: 0.78rem;
 }
@@ -346,25 +317,9 @@ svg {
   display: flex;
   justify-content: space-between;
   gap: 2rem;
-  align-items: flex-start;
+  align-items: center;
   max-width: 1180px;
   margin: 0 auto 2rem;
-}
-.breadcrumb {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin: 0 0 1rem;
-  color: var(--muted-2);
-  font-size: 0.72rem;
-}
-.breadcrumb i {
-  font-style: normal;
-  color: #c0c5bf;
-}
-.breadcrumb b {
-  color: var(--muted);
-  font-weight: 500;
 }
 h1,
 h2,
@@ -373,21 +328,15 @@ p {
   margin-top: 0;
 }
 h1 {
-  margin-bottom: 0.3rem;
+  margin-bottom: 0;
   font-size: clamp(1.7rem, 3vw, 2.2rem);
   line-height: 1.15;
   letter-spacing: -0.045em;
-}
-.topbar > div > p:last-child {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 .health {
   display: flex;
   gap: 0.65rem;
   align-items: center;
-  margin-top: 1.85rem;
   padding: 0.62rem 0.85rem;
   color: var(--muted);
   font-size: 0.72rem;
@@ -412,7 +361,7 @@ h1 {
 }
 .status-card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   gap: 0.9rem;
   align-items: center;
   min-width: 0;
@@ -458,11 +407,6 @@ h1 {
   line-height: 1;
   letter-spacing: -0.04em;
 }
-.status-card small {
-  color: var(--muted-2);
-  font-size: 0.65rem;
-  white-space: nowrap;
-}
 
 .view {
   max-width: 1180px;
@@ -486,22 +430,9 @@ h1 {
   margin-bottom: 1.2rem;
 }
 .section-heading h2 {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0;
   font-size: 1.25rem;
   letter-spacing: -0.03em;
-}
-.section-heading p:not(.kicker) {
-  margin-bottom: 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-.kicker {
-  margin-bottom: 0.4rem;
-  color: var(--accent-dark);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
 }
 sl-button::part(base) {
   font-weight: 700;
@@ -971,8 +902,7 @@ kbd {
     border-top: 1px solid #2b3029;
   }
   .brand,
-  .sidebar-bottom,
-  .nav-label {
+  .sidebar-bottom {
     display: none;
   }
   .primary-nav {
@@ -1005,21 +935,11 @@ kbd {
     margin-left: 0;
     padding: 1.3rem 1rem 6.5rem;
   }
-  .topbar {
-    align-items: center;
-  }
-  .health {
-    margin-top: 0;
-  }
 }
 
 @media (max-width: 650px) {
   .topbar {
     margin-bottom: 1.3rem;
-  }
-  .topbar > div > p:last-child,
-  .breadcrumb {
-    display: none;
   }
   .health > span:last-child {
     display: none;
@@ -1043,18 +963,12 @@ kbd {
   .status-icon svg {
     width: 0.95rem;
   }
-  .status-card small {
-    display: none;
-  }
   .status-card strong {
     margin-top: 0.2rem;
     font-size: 1.15rem;
   }
   .section-heading {
     align-items: flex-start;
-  }
-  .section-heading p:not(.kicker) {
-    max-width: 32ch;
   }
   .card {
     grid-template-columns: 1fr;

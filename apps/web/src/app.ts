@@ -166,7 +166,7 @@ function renderProposals(): void {
   byId("review-shortcuts").hidden = proposals.length === 0;
   byId("proposal-list").innerHTML =
     proposals.length === 0
-      ? '<div class="empty-state inbox-empty"><div><span class="empty-state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7"/><circle cx="12" cy="12" r="9"/></svg></span><h3>すべて確認済みです</h3><p>次は新しい Evidence を取り込みましょう。取り込んだ Evidence からエージェントや CLI が提案を作ると、根拠の件数とともにここに並びます。</p><code class="empty-command">pnpm personal evidence import &lt;file&gt;</code></div></div>'
+      ? '<div class="empty-state inbox-empty"><div><span class="empty-state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7"/><circle cx="12" cy="12" r="9"/></svg></span><h3>すべて確認済みです</h3><p>新しい Evidence を取り込みましょう。</p><code class="empty-command">pnpm personal evidence import &lt;file&gt;</code></div></div>'
       : proposals.map(proposalCard).join("");
 }
 
@@ -356,8 +356,7 @@ async function loadTimeline(): Promise<void> {
         (entry) =>
           `<li><div><strong>${escapeHtml(entry.operation)}</strong> <span class="badge">${escapeHtml(entry.privacy)}</span><p class="meta">${escapeHtml(new Date(entry.occurredAt).toLocaleString("ja-JP"))}</p></div><div><p>${escapeHtml(entry.reason)}</p><p class="meta">実行者：${escapeHtml(entry.actor)}</p><code>${escapeHtml(entry.entityType)}:${escapeHtml(entry.entityId)}</code></div></li>`,
       )
-      .join("") ||
-    '<li><div><strong>履歴はまだありません</strong></div><div><p class="meta">最初の Evidence を取り込むと、監査イベントが表示されます。</p></div></li>';
+      .join("") || "<li><div><strong>履歴はまだありません</strong></div></li>";
 }
 
 interface Assertion {
@@ -431,13 +430,6 @@ document.addEventListener("click", (event) => {
     document
       .querySelectorAll(".view")
       .forEach((section) => section.classList.toggle("hidden", section.id !== `${view}-view`));
-    const labels: Readonly<Record<string, string>> = {
-      review: "レビュー",
-      search: "検索",
-      timeline: "タイムライン",
-      state: "現在の状態",
-    };
-    byId("current-view-label").textContent = labels[view] ?? view;
     if (view === "timeline")
       void loadTimeline().catch((error: unknown) => toast(errorMessage(error)));
     if (view === "state") void loadState().catch((error: unknown) => toast(errorMessage(error)));
@@ -485,7 +477,7 @@ searchForm.addEventListener("submit", (event) => {
       });
       byId("search-results").innerHTML =
         [...assertions.map(assertionCard), ...decisions].join("") ||
-        '<div class="empty-state"><div><h3>根拠のある記憶が見つかりませんでした</h3><p>検索語またはプライバシークラスを変えて、もう一度お試しください。</p></div></div>';
+        '<div class="empty-state"><div><h3>根拠のある記憶が見つかりませんでした</h3><p>検索語かプライバシークラスを変えてください。</p></div></div>';
     })
     .catch((error: unknown) => toast(errorMessage(error)));
 });
