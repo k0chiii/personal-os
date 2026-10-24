@@ -52,6 +52,15 @@ export interface HealthStatus {
   status: "ok";
 }
 
+export class ApiUnreachableError extends Error {
+  static readonly text = "API サーバーに接続できません";
+
+  constructor(cause: unknown) {
+    super(ApiUnreachableError.text, { cause });
+    this.name = "ApiUnreachableError";
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -84,10 +93,15 @@ export async function requestJson(
   const headers = new Headers();
   if (body !== undefined) headers.set("content-type", "application/json");
   if (session.accessToken.length > 0) headers.set("authorization", `Bearer ${session.accessToken}`);
-  const response = await fetch(`${session.apiBase}${path}`, {
-    headers,
-    ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${session.apiBase}${path}`, {
+      headers,
+      ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
+    });
+  } catch (cause: unknown) {
+    throw new ApiUnreachableError(cause);
+  }
   const text = await response.text();
   const contentType = response.headers.get("content-type");
   const value =

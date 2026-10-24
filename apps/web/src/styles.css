@@ -306,6 +306,33 @@ h1 {
 .health.error .health-dot {
   background: var(--danger);
 }
+.offline-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1180px;
+  margin: 0 auto 1.6rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--danger);
+  border-radius: 0.85rem;
+  background: var(--paper);
+}
+.offline-notice strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.95rem;
+}
+.offline-notice p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.offline-notice code {
+  color: var(--accent-dark);
+}
 
 .view {
   max-width: 1180px;
