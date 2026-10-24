@@ -16,6 +16,9 @@ import {
   type Session,
   type TimelineEntry,
 } from "./api.ts";
+import { Badge } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Input } from "./components/ui/input.tsx";
 import { idAfterRemoval, inboxCommand, movedId, type ReviewAction } from "./inbox.ts";
 
 type ViewId = "review" | "search" | "timeline" | "state";
@@ -51,7 +54,7 @@ const TOKEN_KEY = "personal-os-access-token";
 const TOAST_MS = 3200;
 const REASON_HINT = "Enter で確定 ・ Esc で取り消し";
 const EMPTY_REASON = "理由を入力してください。";
-const PENDING_IDS: readonly string[] = ["pending-count", "nav-pending-count", "inbox-count"];
+const PENDING_IDS: readonly string[] = ["nav-pending-count", "inbox-count"];
 
 const ACTION_LABELS: Record<ReviewAction, string> = { approve: "承認", reject: "却下" };
 
@@ -241,10 +244,17 @@ function RefreshButton({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className="secondary icon-button" data-refresh={target} onClick={onClick}>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="icon-button"
+      data-refresh={target}
+      onClick={onClick}
+    >
       <RefreshIcon />
       更新
-    </button>
+    </Button>
   );
 }
 
@@ -292,6 +302,8 @@ function MainNav({
   );
 }
 
+const sidebarField = "border-[#343a32] bg-[#1a1d18] text-white placeholder:text-[#858d83]";
+
 function ConnectionForm({
   session,
   onSubmit,
@@ -311,69 +323,31 @@ function ConnectionForm({
         </Icon>
       </summary>
       <form id="connection-form" className="connection-form" onSubmit={onSubmit}>
-        <label htmlFor="api-base">API endpoint</label>
-        <input
+        <label htmlFor="api-base">API の URL</label>
+        <Input
           id="api-base"
           name="apiBase"
           type="url"
-          placeholder="Same origin"
+          placeholder="同一オリジン"
           defaultValue={session.apiBase}
+          className={sidebarField}
         />
-        <label htmlFor="access-token">Cognito access token</label>
-        <input
+        <label htmlFor="access-token">アクセストークン</label>
+        <Input
           id="access-token"
           name="accessToken"
           type="password"
           autoComplete="off"
-          placeholder="Bearer token"
+          placeholder="トークン"
           defaultValue={session.accessToken}
+          className={sidebarField}
         />
         <p>トークンはこのタブを閉じると破棄されます。</p>
-        <button type="submit">接続を更新</button>
+        <Button type="submit" className="w-full">
+          接続を更新
+        </Button>
       </form>
     </details>
-  );
-}
-
-function StatusGrid({
-  pendingText,
-  timelineText,
-  memoryText,
-}: {
-  pendingText: string;
-  timelineText: string;
-  memoryText: string;
-}) {
-  return (
-    <section className="status-grid" aria-label="概要">
-      <article className="status-card status-card--primary">
-        <div className="status-icon">
-          <NavIcon view="review" />
-        </div>
-        <div>
-          <span>要レビュー</span>
-          <strong id="pending-count">{pendingText}</strong>
-        </div>
-      </article>
-      <article className="status-card">
-        <div className="status-icon status-icon--muted">
-          <NavIcon view="timeline" />
-        </div>
-        <div>
-          <span>監査イベント</span>
-          <strong id="timeline-count">{timelineText}</strong>
-        </div>
-      </article>
-      <article className="status-card">
-        <div className="status-icon status-icon--muted">
-          <NavIcon view="state" />
-        </div>
-        <div>
-          <span>有効な記憶</span>
-          <strong id="memory-count">{memoryText}</strong>
-        </div>
-      </article>
-    </section>
   );
 }
 
@@ -430,7 +404,7 @@ function ReasonForm({
     <form className="reason-form" data-action={action} noValidate onSubmit={onSubmit}>
       <label htmlFor="reason-input">{label}する理由</label>
       <div className="reason-row">
-        <input
+        <Input
           id="reason-input"
           name="reason"
           autoComplete="off"
@@ -441,18 +415,22 @@ function ReasonForm({
           onChange={(event) => onReason(event.target.value)}
           {...(problem === EMPTY_REASON ? { "aria-invalid": true } : {})}
         />
-        <button type="submit" className={`confirm confirm--${action}`} disabled={busy}>
+        <Button
+          type="submit"
+          variant={action === "approve" ? "default" : "destructive"}
+          disabled={busy}
+        >
           {label}を確定
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="secondary"
+          variant="outline"
           data-cancel-review=""
           disabled={busy}
           onClick={onCancel}
         >
           キャンセル
-        </button>
+        </Button>
       </div>
       <p id="reason-hint" className={problem === null ? "reason-hint" : "reason-hint error"}>
         {problem ?? REASON_HINT}
@@ -528,8 +506,8 @@ function ProposalCard({
     >
       <div className="card-body">
         <p className="card-tags">
-          <span className="badge badge-kind">{proposal.assertion.kind}</span>
-          <span className="badge">{proposal.assertion.privacy}</span>
+          <Badge variant="outline">{proposal.assertion.kind}</Badge>
+          <Badge variant="outline">{proposal.assertion.privacy}</Badge>
         </p>
         <h3 id={`proposal-title-${proposal.id}`}>{proposal.assertion.object}</h3>
         <p className="meta">
@@ -537,21 +515,23 @@ function ProposalCard({
         </p>
       </div>
       <div className="actions">
-        <button
+        <Button
           type="button"
+          size="sm"
           data-compose="approve"
           onClick={() => onCompose(proposal.id, "approve")}
         >
           承認<kbd>A</kbd>
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="reject"
+          size="sm"
+          variant="reject"
           data-compose="reject"
           onClick={() => onCompose(proposal.id, "reject")}
         >
           却下<kbd>R</kbd>
-        </button>
+        </Button>
       </div>
       {open === null ? null : (
         <ReasonForm
@@ -571,8 +551,8 @@ function ProposalCard({
 function AssertionCard({ assertion }: { assertion: Assertion }) {
   return (
     <article className="result">
-      <span className="badge">{assertion.kind}</span>
-      <span className="badge">{assertion.privacy}</span>
+      <Badge variant="outline">{assertion.kind}</Badge>
+      <Badge variant="outline">{assertion.privacy}</Badge>
       <h3>{assertion.object}</h3>
       <p className="meta">
         {formatWhen(assertion.validFrom)} から有効 ・ {assertion.id}
@@ -584,7 +564,7 @@ function AssertionCard({ assertion }: { assertion: Assertion }) {
 function DecisionCard({ decision }: { decision: Decision }) {
   return (
     <article className="result">
-      <span className="badge">decision</span>
+      <Badge variant="outline">decision</Badge>
       <h3>{decision.problem}</h3>
       <p>{decision.rationale}</p>
     </article>
@@ -644,7 +624,7 @@ function TimelineList({ timeline }: { timeline: TimelineState }) {
   return timeline.entries.map((entry, index) => (
     <li key={`${entry.occurredAt}-${entry.entityId}-${index}`}>
       <div>
-        <strong>{entry.operation}</strong> <span className="badge">{entry.privacy}</span>
+        <strong>{entry.operation}</strong> <Badge variant="outline">{entry.privacy}</Badge>
         <p className="meta">{formatWhen(entry.occurredAt)}</p>
       </div>
       <div>
@@ -993,11 +973,6 @@ export function Console() {
               <span>{healthLabel(health)}</span>
             </div>
           </header>
-          <StatusGrid
-            pendingText={pendingText}
-            timelineText={timelineText}
-            memoryText={memoryText}
-          />
           <section
             id="review-view"
             className={viewClass(view === "review")}
@@ -1076,13 +1051,14 @@ export function Console() {
                   <circle cx="10.8" cy="10.8" r="6.3" />
                   <path d="m16 16 4 4" />
                 </Icon>
-                <input
+                <Input
                   id="query"
                   name="query"
                   required
                   placeholder="例：いま優先している研究テーマは？"
+                  className="pl-10"
                 />
-                <button type="submit">検索</button>
+                <Button type="submit">検索</Button>
               </div>
               <fieldset>
                 <legend>検索に含めるプライバシークラス</legend>
@@ -1110,7 +1086,12 @@ export function Console() {
           >
             <div className="section-heading">
               <div>
-                <h2 id="timeline-title">監査タイムライン</h2>
+                <h2 id="timeline-title">
+                  監査タイムライン{" "}
+                  <span id="timeline-count" className="inbox-count">
+                    {timelineText}
+                  </span>
+                </h2>
                 <p>いつ、誰が、何を、なぜ変更したかを追跡できます。</p>
               </div>
               <RefreshButton target="timeline" onClick={() => void reloadTimeline(session, true)} />
@@ -1126,7 +1107,12 @@ export function Console() {
           >
             <div className="section-heading">
               <div>
-                <h2 id="state-title">現在の状態</h2>
+                <h2 id="state-title">
+                  現在の状態{" "}
+                  <span id="memory-count" className="inbox-count">
+                    {memoryText}
+                  </span>
+                </h2>
                 <p>いま有効な目標・価値観・制約などを種類ごとに確認します。</p>
               </div>
               <RefreshButton target="state" onClick={() => void reloadMemory(session, true)} />
