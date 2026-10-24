@@ -1,0 +1,1150 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+
+import {
+  currentStateResponse,
+  healthResponse,
+  proposalsResponse,
+  requestJson,
+  searchResponse,
+  timelineResponse,
+  type Assertion,
+  type CurrentState,
+  type Decision,
+  type Proposal,
+  type SearchResults,
+  type Session,
+  type TimelineEntry,
+} from "./api.ts";
+import { idAfterRemoval, inboxCommand, movedId, type ReviewAction } from "./inbox.ts";
+
+type ViewId = "review" | "search" | "timeline" | "state";
+
+type Composer =
+  | { phase: "closed" }
+  | {
+      phase: "edit";
+      proposalId: string;
+      action: ReviewAction;
+      reason: string;
+      problem: string | null;
+    }
+  | { phase: "sending"; proposalId: string; action: ReviewAction; reason: string };
+
+interface InboxRow {
+  proposal: Proposal;
+  phase: "in" | "out";
+}
+
+type HealthState = { phase: "checking" } | { phase: "ok" } | { phase: "error"; message: string };
+
+type TimelineState = { phase: "idle" } | { phase: "ready"; entries: TimelineEntry[] };
+
+type MemoryState = { phase: "idle" } | { phase: "ready"; state: CurrentState };
+
+type SearchState = { phase: "idle" } | { phase: "ready"; results: SearchResults };
+
+type ToastState = { text: string; visible: boolean };
+
+const API_BASE_KEY = "personal-os-api-base";
+const TOKEN_KEY = "personal-os-access-token";
+const TOAST_MS = 3200;
+const REASON_HINT = "Enter で確定 ・ Esc で取り消し";
+const EMPTY_REASON = "理由を入力してください。";
+const PENDING_IDS: readonly string[] = ["pending-count", "nav-pending-count", "inbox-count"];
+
+const ACTION_LABELS: Record<ReviewAction, string> = { approve: "承認", reject: "却下" };
+
+const REASON_PLACEHOLDERS: Record<ReviewAction, string> = {
+  approve: "例：本人の発言と一致している",
+  reject: "例：根拠と内容が食い違っている",
+};
+
+const NAV: readonly { id: ViewId; label: string }[] = [
+  { id: "review", label: "レビュー" },
+  { id: "search", label: "検索" },
+  { id: "timeline", label: "タイムライン" },
+  { id: "state", label: "現在の状態" },
+];
+
+const PRIVACY_OPTIONS: readonly { value: string; label: string; checked: boolean }[] = [
+  { value: "P0", label: "P0 公開", checked: true },
+  { value: "P1", label: "P1 個人", checked: true },
+  { value: "P2", label: "P2 機微", checked: false },
+  { value: "P3", label: "P3 厳格", checked: false },
+];
+
+function loadSession(): Session {
+  return {
+    apiBase: (localStorage.getItem(API_BASE_KEY) ?? "").replace(/\/$/u, ""),
+    accessToken: sessionStorage.getItem(TOKEN_KEY) ?? "",
+  };
+}
+
+function saveSession(session: Session): void {
+  localStorage.setItem(API_BASE_KEY, session.apiBase);
+  sessionStorage.setItem(TOKEN_KEY, session.accessToken);
+}
+
+function readSession(form: HTMLFormElement): Session {
+  const data = new FormData(form);
+  const apiBase = data.get("apiBase");
+  const accessToken = data.get("accessToken");
+  return {
+    apiBase: (typeof apiBase === "string" ? apiBase : "").trim().replace(/\/$/u, ""),
+    accessToken: (typeof accessToken === "string" ? accessToken : "").trim(),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unexpected error.";
+}
+
+function formatWhen(value: string): string {
+  return new Date(value).toLocaleString("ja-JP");
+}
+
+function stateGroups(state: CurrentState): { kind: string; assertions: Assertion[] }[] {
+  const grouped: Record<string, Assertion[]> = {
+    preferences: state.preferences,
+    ...state.intents,
+  };
+  return Object.entries(grouped).map(([kind, assertions]) => ({ kind, assertions }));
+}
+
+function memoryCount(state: CurrentState): number {
+  return stateGroups(state).reduce((total, group) => total + group.assertions.length, 0);
+}
+
+function cardElement(id: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`.inbox-card[data-proposal-id="${CSS.escape(id)}"]`);
+}
+
+function focusCard(card: HTMLElement): void {
+  card.focus();
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  card.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+}
+
+function pulsePending(): void {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (const id of PENDING_IDS) {
+    document
+      .getElementById(id)
+      ?.animate(
+        [
+          { transform: "scale(1)" },
+          { transform: "scale(1.18)", offset: 0.4 },
+          { transform: "scale(1)" },
+        ],
+        { duration: 320, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+      );
+  }
+}
+
+function viewClass(active: boolean): string {
+  return active ? "view" : "view hidden";
+}
+
+function cardClass(rejecting: boolean, leaving: boolean): string {
+  const names = ["card", "inbox-card"];
+  if (rejecting) names.push("composing--reject");
+  if (leaving) names.push("leaving");
+  return names.join(" ");
+}
+
+function healthClass(health: HealthState): string {
+  switch (health.phase) {
+    case "checking":
+      return "health";
+    case "ok":
+      return "health api-connected";
+    case "error":
+      return "health error";
+    default: {
+      const unexpected: never = health;
+      throw new Error(String(unexpected));
+    }
+  }
+}
+
+function healthLabel(health: HealthState): string {
+  switch (health.phase) {
+    case "checking":
+      return "接続を確認中";
+    case "ok":
+      return "API 接続済み";
+    case "error":
+      return health.message;
+    default: {
+      const unexpected: never = health;
+      throw new Error(String(unexpected));
+    }
+  }
+}
+
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+function NavIcon({ view }: { view: ViewId }) {
+  switch (view) {
+    case "review":
+      return (
+        <Icon>
+          <path d="M9 11l2 2 4-4M5 4h14v16H5z" />
+        </Icon>
+      );
+    case "search":
+      return (
+        <Icon>
+          <circle cx="10.8" cy="10.8" r="6.3" />
+          <path d="m16 16 4 4" />
+        </Icon>
+      );
+    case "timeline":
+      return (
+        <Icon>
+          <path d="M12 7v5l3 2M4 12a8 8 0 1 0 2.3-5.7L4 8.6V4" />
+        </Icon>
+      );
+    case "state":
+      return (
+        <Icon>
+          <path d="M4 6h16M4 12h10M4 18h13" />
+        </Icon>
+      );
+    default: {
+      const unexpected: never = view;
+      throw new Error(String(unexpected));
+    }
+  }
+}
+
+function RefreshIcon() {
+  return (
+    <Icon>
+      <path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.8-2L20 11M4 13l2.1 4a7 7 0 0 0 11.8-2" />
+    </Icon>
+  );
+}
+
+function RefreshButton({
+  target,
+  onClick,
+}: {
+  target: "review" | "timeline" | "state";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="secondary icon-button" data-refresh={target} onClick={onClick}>
+      <RefreshIcon />
+      更新
+    </button>
+  );
+}
+
+function Brand() {
+  return (
+    <a className="brand" href="#main" aria-label="Personal OS ホーム">
+      <span className="brand-mark" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span>
+        <strong>Personal OS</strong>
+      </span>
+    </a>
+  );
+}
+
+function MainNav({
+  view,
+  pendingText,
+  onSelect,
+}: {
+  view: ViewId;
+  pendingText: string;
+  onSelect: (view: ViewId) => void;
+}) {
+  return (
+    <nav className="primary-nav" aria-label="メインメニュー">
+      {NAV.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className={view === item.id ? "tab active" : "tab"}
+          data-view={item.id}
+          aria-controls={`${item.id}-view`}
+          onClick={() => onSelect(item.id)}
+        >
+          <NavIcon view={item.id} />
+          <span>{item.label}</span>
+          {item.id === "review" ? <b id="nav-pending-count">{pendingText}</b> : null}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function ConnectionForm({
+  session,
+  onSubmit,
+}: {
+  session: Session;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <details className="connection-panel">
+      <summary>
+        <span className="connection-dot" />
+        <span>
+          <strong>API 設定</strong>
+        </span>
+        <Icon>
+          <path d="m9 6 6 6-6 6" />
+        </Icon>
+      </summary>
+      <form id="connection-form" className="connection-form" onSubmit={onSubmit}>
+        <label htmlFor="api-base">API endpoint</label>
+        <input
+          id="api-base"
+          name="apiBase"
+          type="url"
+          placeholder="Same origin"
+          defaultValue={session.apiBase}
+        />
+        <label htmlFor="access-token">Cognito access token</label>
+        <input
+          id="access-token"
+          name="accessToken"
+          type="password"
+          autoComplete="off"
+          placeholder="Bearer token"
+          defaultValue={session.accessToken}
+        />
+        <p>トークンはこのタブを閉じると破棄されます。</p>
+        <button type="submit">接続を更新</button>
+      </form>
+    </details>
+  );
+}
+
+function StatusGrid({
+  pendingText,
+  timelineText,
+  memoryText,
+}: {
+  pendingText: string;
+  timelineText: string;
+  memoryText: string;
+}) {
+  return (
+    <section className="status-grid" aria-label="概要">
+      <article className="status-card status-card--primary">
+        <div className="status-icon">
+          <NavIcon view="review" />
+        </div>
+        <div>
+          <span>要レビュー</span>
+          <strong id="pending-count">{pendingText}</strong>
+        </div>
+      </article>
+      <article className="status-card">
+        <div className="status-icon status-icon--muted">
+          <NavIcon view="timeline" />
+        </div>
+        <div>
+          <span>監査イベント</span>
+          <strong id="timeline-count">{timelineText}</strong>
+        </div>
+      </article>
+      <article className="status-card">
+        <div className="status-icon status-icon--muted">
+          <NavIcon view="state" />
+        </div>
+        <div>
+          <span>有効な記憶</span>
+          <strong id="memory-count">{memoryText}</strong>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function InboxEmpty({ loaded }: { loaded: boolean }) {
+  if (!loaded) {
+    return (
+      <div className="empty-state">
+        <div>
+          <span className="empty-state-icon">
+            <Icon>
+              <path d="M5 4h14v16H5zM9 9h6M9 13h4" />
+            </Icon>
+          </span>
+          <h3>API に接続してください</h3>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="empty-state inbox-empty">
+      <div>
+        <span className="empty-state-icon">
+          <Icon>
+            <path d="m7 12 3 3 7-7" />
+            <circle cx="12" cy="12" r="9" />
+          </Icon>
+        </span>
+        <h3>すべて確認済みです</h3>
+        <code className="empty-command">pnpm personal evidence import {"<file>"}</code>
+      </div>
+    </div>
+  );
+}
+
+function ReasonForm({
+  action,
+  reason,
+  problem,
+  busy,
+  onReason,
+  onSubmit,
+  onCancel,
+}: {
+  action: ReviewAction;
+  reason: string;
+  problem: string | null;
+  busy: boolean;
+  onReason: (reason: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
+}) {
+  const label = ACTION_LABELS[action];
+  return (
+    <form className="reason-form" data-action={action} noValidate onSubmit={onSubmit}>
+      <label htmlFor="reason-input">{label}する理由</label>
+      <div className="reason-row">
+        <input
+          id="reason-input"
+          name="reason"
+          autoComplete="off"
+          placeholder={REASON_PLACEHOLDERS[action]}
+          aria-describedby="reason-hint"
+          value={reason}
+          disabled={busy}
+          onChange={(event) => onReason(event.target.value)}
+          {...(problem === EMPTY_REASON ? { "aria-invalid": true } : {})}
+        />
+        <button type="submit" className={`confirm confirm--${action}`} disabled={busy}>
+          {label}を確定
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          data-cancel-review=""
+          disabled={busy}
+          onClick={onCancel}
+        >
+          キャンセル
+        </button>
+      </div>
+      <p id="reason-hint" className={problem === null ? "reason-hint" : "reason-hint error"}>
+        {problem ?? REASON_HINT}
+      </p>
+    </form>
+  );
+}
+
+function ProposalCard({
+  row,
+  index,
+  composer,
+  onCompose,
+  onCancel,
+  onSubmit,
+  onReason,
+  onLeft,
+}: {
+  row: InboxRow;
+  index: number;
+  composer: Composer;
+  onCompose: (proposalId: string, action: ReviewAction) => void;
+  onCancel: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onReason: (reason: string) => void;
+  onLeft: (proposalId: string) => void;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const [lockedHeight, setLockedHeight] = useState<number | null>(null);
+  const onLeftRef = useRef(onLeft);
+  onLeftRef.current = onLeft;
+  const proposal = row.proposal;
+  const open = composer.phase !== "closed" && composer.proposalId === proposal.id ? composer : null;
+  const busy = open?.phase === "sending";
+  const rejecting = open !== null && open.action === "reject";
+
+  useLayoutEffect(() => {
+    ref.current?.style.setProperty("--i", String(index));
+  }, [index, lockedHeight]);
+
+  useLayoutEffect(() => {
+    if (row.phase !== "out" || lockedHeight !== null) return;
+    const card = ref.current;
+    if (card === null) return;
+    setLockedHeight(card.offsetHeight);
+  }, [row.phase, lockedHeight]);
+
+  useLayoutEffect(() => {
+    if (row.phase !== "out" || lockedHeight === null) return undefined;
+    const card = ref.current;
+    if (card === null) return undefined;
+    let cancelled = false;
+    void card.offsetHeight;
+    const animations = card.getAnimations();
+    void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+      if (!cancelled) onLeftRef.current(proposal.id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [row.phase, lockedHeight, proposal.id]);
+
+  return (
+    <article
+      ref={ref}
+      className={cardClass(rejecting, lockedHeight !== null)}
+      style={lockedHeight === null ? undefined : { height: lockedHeight }}
+      tabIndex={0}
+      data-proposal-id={proposal.id}
+      aria-labelledby={`proposal-title-${proposal.id}`}
+      aria-describedby="review-shortcuts"
+      {...(busy ? { "aria-busy": true } : {})}
+    >
+      <div className="card-body">
+        <p className="card-tags">
+          <span className="badge badge-kind">{proposal.assertion.kind}</span>
+          <span className="badge">{proposal.assertion.privacy}</span>
+        </p>
+        <h3 id={`proposal-title-${proposal.id}`}>{proposal.assertion.object}</h3>
+        <p className="meta">
+          根拠 {proposal.assertion.evidenceIds.length} 件 ・ {formatWhen(proposal.createdAt)}
+        </p>
+      </div>
+      <div className="actions">
+        <button
+          type="button"
+          data-compose="approve"
+          onClick={() => onCompose(proposal.id, "approve")}
+        >
+          承認<kbd>A</kbd>
+        </button>
+        <button
+          type="button"
+          className="reject"
+          data-compose="reject"
+          onClick={() => onCompose(proposal.id, "reject")}
+        >
+          却下<kbd>R</kbd>
+        </button>
+      </div>
+      {open === null ? null : (
+        <ReasonForm
+          action={open.action}
+          reason={open.reason}
+          problem={open.phase === "edit" ? open.problem : null}
+          busy={open.phase === "sending"}
+          onReason={onReason}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+        />
+      )}
+    </article>
+  );
+}
+
+function AssertionCard({ assertion }: { assertion: Assertion }) {
+  return (
+    <article className="result">
+      <span className="badge">{assertion.kind}</span>
+      <span className="badge">{assertion.privacy}</span>
+      <h3>{assertion.object}</h3>
+      <p className="meta">
+        {formatWhen(assertion.validFrom)} から有効 ・ {assertion.id}
+      </p>
+    </article>
+  );
+}
+
+function DecisionCard({ decision }: { decision: Decision }) {
+  return (
+    <article className="result">
+      <span className="badge">decision</span>
+      <h3>{decision.problem}</h3>
+      <p>{decision.rationale}</p>
+    </article>
+  );
+}
+
+function SearchResultsList({ search }: { search: SearchState }) {
+  if (search.phase !== "ready") return null;
+  const { assertions, decisions } = search.results;
+  if (assertions.length === 0 && decisions.length === 0) {
+    return (
+      <div className="empty-state">
+        <div>
+          <h3>根拠のある記憶が見つかりませんでした</h3>
+          <p>検索語またはプライバシークラスを変えて、もう一度お試しください。</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <>
+      {assertions.map((assertion) => (
+        <AssertionCard key={assertion.id} assertion={assertion} />
+      ))}
+      {decisions.map((decision, index) => (
+        <DecisionCard key={`${decision.problem}-${index}`} decision={decision} />
+      ))}
+    </>
+  );
+}
+
+function TimelineList({ timeline }: { timeline: TimelineState }) {
+  if (timeline.phase === "idle") {
+    return (
+      <li>
+        <div>
+          <strong>接続待ち</strong>
+        </div>
+        <div>
+          <p className="meta">API 接続後に監査イベントを読み込みます。</p>
+        </div>
+      </li>
+    );
+  }
+  if (timeline.entries.length === 0) {
+    return (
+      <li>
+        <div>
+          <strong>履歴はまだありません</strong>
+        </div>
+        <div>
+          <p className="meta">最初の Evidence を取り込むと、監査イベントが表示されます。</p>
+        </div>
+      </li>
+    );
+  }
+  return timeline.entries.map((entry, index) => (
+    <li key={`${entry.occurredAt}-${entry.entityId}-${index}`}>
+      <div>
+        <strong>{entry.operation}</strong> <span className="badge">{entry.privacy}</span>
+        <p className="meta">{formatWhen(entry.occurredAt)}</p>
+      </div>
+      <div>
+        <p>{entry.reason}</p>
+        <p className="meta">実行者：{entry.actor}</p>
+        <code>
+          {entry.entityType}:{entry.entityId}
+        </code>
+      </div>
+    </li>
+  ));
+}
+
+function StatePanels({ memory }: { memory: MemoryState }) {
+  if (memory.phase === "idle") {
+    return (
+      <section className="state-group">
+        <p className="meta">API 接続後に現在の状態を読み込みます。</p>
+      </section>
+    );
+  }
+  return stateGroups(memory.state).map((group) => (
+    <section className="state-group" key={group.kind}>
+      <h3>
+        {group.kind.replaceAll("_", " ")} <span className="meta">{group.assertions.length}</span>
+      </h3>
+      <div className="stack">
+        {group.assertions.length === 0 ? (
+          <p className="meta">有効な項目はありません。</p>
+        ) : (
+          group.assertions.map((assertion) => (
+            <AssertionCard key={assertion.id} assertion={assertion} />
+          ))
+        )}
+      </div>
+    </section>
+  ));
+}
+
+export function Console() {
+  const [session, setSession] = useState(loadSession);
+  const [health, setHealth] = useState<HealthState>({ phase: "checking" });
+  const [view, setView] = useState<ViewId>("review");
+  const [inboxLoaded, setInboxLoaded] = useState(false);
+  const [rows, setRows] = useState<InboxRow[]>([]);
+  const [timeline, setTimeline] = useState<TimelineState>({ phase: "idle" });
+  const [memory, setMemory] = useState<MemoryState>({ phase: "idle" });
+  const [search, setSearch] = useState<SearchState>({ phase: "idle" });
+  const [composer, setComposer] = useState<Composer>({ phase: "closed" });
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const focusReason = useRef(false);
+  const submitting = useRef(false);
+  const rowsRef = useRef(rows);
+  const viewRef = useRef(view);
+  const composerRef = useRef(composer);
+  const previousPending = useRef<string | null>(null);
+  const openComposerRef = useRef<(proposalId: string, action: ReviewAction) => void>(
+    () => undefined,
+  );
+  const closeComposerRef = useRef<() => void>(() => undefined);
+  rowsRef.current = rows;
+  viewRef.current = view;
+  composerRef.current = composer;
+
+  const pendingText = inboxLoaded ? String(rows.filter((row) => row.phase === "in").length) : "—";
+  const timelineText = timeline.phase === "ready" ? String(timeline.entries.length) : "—";
+  const memoryText = memory.phase === "ready" ? String(memoryCount(memory.state)) : "—";
+
+  function showToast(text: string): void {
+    setToast({ text, visible: true });
+  }
+
+  async function reloadHealth(current: Session): Promise<void> {
+    try {
+      healthResponse(await requestJson(current, "/health"));
+      setHealth({ phase: "ok" });
+    } catch (error: unknown) {
+      setHealth({ phase: "error", message: errorMessage(error) });
+    }
+  }
+
+  async function reloadProposals(current: Session): Promise<void> {
+    try {
+      const proposals = proposalsResponse(
+        await requestJson(current, "/v1/proposals?status=pending"),
+      );
+      setInboxLoaded(true);
+      setRows(proposals.map((proposal) => ({ proposal, phase: "in" })));
+      setComposer({ phase: "closed" });
+    } catch (error: unknown) {
+      showToast(errorMessage(error));
+    }
+  }
+
+  async function reloadTimeline(current: Session, notify: boolean): Promise<void> {
+    try {
+      const entries = timelineResponse(
+        await requestJson(current, "/v1/timeline?privacy=P0,P1,P2,P3&limit=100"),
+      );
+      setTimeline({ phase: "ready", entries });
+    } catch (error: unknown) {
+      if (notify) showToast(errorMessage(error));
+    }
+  }
+
+  async function reloadMemory(current: Session, notify: boolean): Promise<void> {
+    try {
+      setMemory({
+        phase: "ready",
+        state: currentStateResponse(
+          await requestJson(current, "/v1/self/current?privacy=P0,P1,P2,P3"),
+        ),
+      });
+    } catch (error: unknown) {
+      if (notify) showToast(errorMessage(error));
+    }
+  }
+
+  function openComposer(proposalId: string, action: ReviewAction): void {
+    const row = rowsRef.current.find((item) => item.proposal.id === proposalId);
+    if (row === undefined || row.phase !== "in") return;
+    focusReason.current = true;
+    setComposer({ phase: "edit", proposalId, action, reason: "", problem: null });
+  }
+
+  function closeComposer(): void {
+    const current = composerRef.current;
+    if (current.phase === "closed") return;
+    const card = cardElement(current.proposalId);
+    setComposer({ phase: "closed" });
+    if (card !== null) focusCard(card);
+  }
+
+  function dismiss(id: string): void {
+    const current = rowsRef.current;
+    if (!current.some((row) => row.proposal.id === id && row.phase === "in")) return;
+    const ids = current.filter((row) => row.phase === "in").map((row) => row.proposal.id);
+    const nextId = idAfterRemoval(ids, id);
+    if (nextId !== null) {
+      const next = cardElement(nextId);
+      if (next !== null) focusCard(next);
+    }
+    const nextRows = current.map((row): InboxRow =>
+      row.proposal.id === id ? { proposal: row.proposal, phase: "out" } : row,
+    );
+    rowsRef.current = nextRows;
+    setRows(nextRows);
+  }
+
+  function dropRow(id: string): void {
+    const next = rowsRef.current.filter((row) => row.proposal.id !== id);
+    rowsRef.current = next;
+    setRows(next);
+    setComposer((current) =>
+      current.phase !== "closed" && current.proposalId === id ? { phase: "closed" } : current,
+    );
+    if (next.length === 0) document.querySelector<HTMLElement>("#review-title")?.focus();
+  }
+
+  function onReason(reason: string): void {
+    setComposer((current) => {
+      if (current.phase !== "edit") return current;
+      if (current.problem !== EMPTY_REASON) return { ...current, reason };
+      return { ...current, reason, problem: null };
+    });
+  }
+
+  async function submitReview(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (submitting.current) return;
+    const current = composerRef.current;
+    if (current.phase !== "edit") return;
+    const reason = current.reason.trim();
+    if (reason.length === 0) {
+      setComposer({ ...current, problem: EMPTY_REASON });
+      document.querySelector<HTMLInputElement>("#reason-input")?.focus();
+      return;
+    }
+    submitting.current = true;
+    setComposer({
+      phase: "sending",
+      proposalId: current.proposalId,
+      action: current.action,
+      reason: current.reason,
+    });
+    try {
+      await requestJson(
+        session,
+        `/v1/proposals/${encodeURIComponent(current.proposalId)}/${current.action}`,
+        { actor: "web-owner", reason },
+      );
+    } catch (error: unknown) {
+      submitting.current = false;
+      const message = errorMessage(error);
+      setComposer((latest) => {
+        if (latest.phase !== "sending" || latest.proposalId !== current.proposalId) return latest;
+        return {
+          phase: "edit",
+          proposalId: current.proposalId,
+          action: current.action,
+          reason: current.reason,
+          problem: message,
+        };
+      });
+      document.querySelector<HTMLInputElement>("#reason-input")?.focus();
+      return;
+    }
+    showToast(`提案を${ACTION_LABELS[current.action]}しました。`);
+    void reloadTimeline(session, false);
+    void reloadMemory(session, false);
+    dismiss(current.proposalId);
+    submitting.current = false;
+  }
+
+  function selectView(next: ViewId): void {
+    setView(next);
+    if (next === "timeline") void reloadTimeline(session, true);
+    if (next === "state") void reloadMemory(session, true);
+  }
+
+  function onConnect(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const next = readSession(event.currentTarget);
+    saveSession(next);
+    setSession(next);
+    void reloadHealth(next);
+    void reloadProposals(next);
+    void reloadTimeline(next, false);
+    void reloadMemory(next, false);
+  }
+
+  async function onSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const queryValue = data.get("query");
+    const query = typeof queryValue === "string" ? queryValue : "";
+    const privacy = data
+      .getAll("privacy")
+      .filter((value): value is string => typeof value === "string");
+    try {
+      setSearch({
+        phase: "ready",
+        results: searchResponse(await requestJson(session, "/v1/search", { query, privacy })),
+      });
+    } catch (error: unknown) {
+      showToast(errorMessage(error));
+    }
+  }
+
+  openComposerRef.current = openComposer;
+  closeComposerRef.current = closeComposer;
+
+  useEffect(() => {
+    const initial = loadSession();
+    void reloadHealth(initial);
+    void reloadProposals(initial);
+    void reloadTimeline(initial, false);
+    void reloadMemory(initial, false);
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle("api-connected", health.phase === "ok");
+  }, [health.phase]);
+
+  useEffect(() => {
+    if (toast === null || !toast.visible) return undefined;
+    const timeout = window.setTimeout(() => {
+      setToast((current) => (current === null ? current : { ...current, visible: false }));
+    }, TOAST_MS);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+
+  useEffect(() => {
+    const previous = previousPending.current;
+    previousPending.current = pendingText;
+    if (previous === null || previous === pendingText) return;
+    pulsePending();
+  }, [pendingText]);
+
+  useLayoutEffect(() => {
+    if (!focusReason.current) return;
+    focusReason.current = false;
+    document.querySelector<HTMLInputElement>("#reason-input")?.focus();
+  });
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (event.key === "Escape" && target.closest(".reason-form") !== null) {
+        event.preventDefault();
+        closeComposerRef.current();
+        return;
+      }
+      if (target.closest("input, textarea, select, [contenteditable]") !== null) return;
+      if (viewRef.current !== "review") return;
+      const command = inboxCommand(event);
+      if (command === null) return;
+      const card = target.closest<HTMLElement>(".inbox-card");
+      if (command.type === "compose") {
+        if (card === null) return;
+        const proposalId = card.dataset.proposalId;
+        if (proposalId === undefined) return;
+        event.preventDefault();
+        openComposerRef.current(proposalId, command.action);
+        return;
+      }
+      const main = document.querySelector("#main");
+      const fromPage =
+        target === document.body || target === main || target.closest("#review-view") !== null;
+      if (card === null && (!fromPage || event.key.startsWith("Arrow"))) return;
+      const ids = rowsRef.current.filter((row) => row.phase === "in").map((row) => row.proposal.id);
+      const nextId = movedId(ids, card?.dataset.proposalId ?? null, command.delta);
+      if (nextId === null) return;
+      const next = cardElement(nextId);
+      if (next === null) return;
+      event.preventDefault();
+      focusCard(next);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  return (
+    <>
+      <a className="skip-link" href="#main">
+        本文へ移動
+      </a>
+      <div className="app-shell">
+        <aside className="sidebar">
+          <Brand />
+          <MainNav view={view} pendingText={pendingText} onSelect={selectView} />
+          <div className="sidebar-bottom">
+            <ConnectionForm session={session} onSubmit={onConnect} />
+            <p className="build-label">v1.0.0-rc.1</p>
+          </div>
+        </aside>
+        <main id="main" className="main-content" tabIndex={-1}>
+          <header className="topbar">
+            <div>
+              <h1>Personal OS</h1>
+              <p>おかえりなさい。記憶の候補を確認し、あなた自身のモデルを育てます。</p>
+            </div>
+            <div id="health" className={healthClass(health)} role="status">
+              <span className="health-dot" />
+              <span>{healthLabel(health)}</span>
+            </div>
+          </header>
+          <StatusGrid
+            pendingText={pendingText}
+            timelineText={timelineText}
+            memoryText={memoryText}
+          />
+          <section
+            id="review-view"
+            className={viewClass(view === "review")}
+            aria-labelledby="review-title"
+          >
+            <div className="section-heading">
+              <div>
+                <h2 id="review-title" tabIndex={-1}>
+                  審査待ちの提案{" "}
+                  <span id="inbox-count" className="inbox-count">
+                    {pendingText}
+                  </span>
+                </h2>
+                <p>根拠を確認してから、記憶への追加を承認してください。</p>
+              </div>
+              <RefreshButton target="review" onClick={() => void reloadProposals(session)} />
+            </div>
+            <p
+              id="review-shortcuts"
+              className="shortcut-hint"
+              hidden={!rows.some((row) => row.phase === "in")}
+            >
+              <span>
+                <kbd>J</kbd>
+                <kbd>K</kbd> で移動
+              </span>
+              <span>
+                <kbd>A</kbd> で承認
+              </span>
+              <span>
+                <kbd>R</kbd> で却下
+              </span>
+              <span>
+                <kbd>Esc</kbd> で取り消し
+              </span>
+            </p>
+            <div id="proposal-list" className="review-list" aria-live="polite">
+              {rows.length === 0 ? (
+                <InboxEmpty loaded={inboxLoaded} />
+              ) : (
+                rows.map((row, index) => (
+                  <ProposalCard
+                    key={row.proposal.id}
+                    row={row}
+                    index={index}
+                    composer={composer}
+                    onCompose={openComposer}
+                    onCancel={closeComposer}
+                    onSubmit={(event) => void submitReview(event)}
+                    onReason={onReason}
+                    onLeft={dropRow}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+          <section
+            id="search-view"
+            className={viewClass(view === "search")}
+            aria-labelledby="search-title"
+          >
+            <div className="section-heading">
+              <div>
+                <h2 id="search-title">記憶を検索</h2>
+                <p>時間とプライバシー境界を保ったまま、根拠のある記憶を探します。</p>
+              </div>
+            </div>
+            <form
+              id="search-form"
+              className="search-panel"
+              onSubmit={(event) => void onSearch(event)}
+            >
+              <label htmlFor="query">質問またはキーワード</label>
+              <div className="search-input-wrap">
+                <Icon>
+                  <circle cx="10.8" cy="10.8" r="6.3" />
+                  <path d="m16 16 4 4" />
+                </Icon>
+                <input
+                  id="query"
+                  name="query"
+                  required
+                  placeholder="例：いま優先している研究テーマは？"
+                />
+                <button type="submit">検索</button>
+              </div>
+              <fieldset>
+                <legend>検索に含めるプライバシークラス</legend>
+                {PRIVACY_OPTIONS.map((option) => (
+                  <label key={option.value}>
+                    <input
+                      type="checkbox"
+                      name="privacy"
+                      value={option.value}
+                      defaultChecked={option.checked}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </fieldset>
+            </form>
+            <div id="search-results" className="result-list" aria-live="polite">
+              <SearchResultsList search={search} />
+            </div>
+          </section>
+          <section
+            id="timeline-view"
+            className={viewClass(view === "timeline")}
+            aria-labelledby="timeline-title"
+          >
+            <div className="section-heading">
+              <div>
+                <h2 id="timeline-title">監査タイムライン</h2>
+                <p>いつ、誰が、何を、なぜ変更したかを追跡できます。</p>
+              </div>
+              <RefreshButton target="timeline" onClick={() => void reloadTimeline(session, true)} />
+            </div>
+            <ol id="timeline-list" className="timeline" aria-live="polite">
+              <TimelineList timeline={timeline} />
+            </ol>
+          </section>
+          <section
+            id="state-view"
+            className={viewClass(view === "state")}
+            aria-labelledby="state-title"
+          >
+            <div className="section-heading">
+              <div>
+                <h2 id="state-title">現在の状態</h2>
+                <p>いま有効な目標・価値観・制約などを種類ごとに確認します。</p>
+              </div>
+              <RefreshButton target="state" onClick={() => void reloadMemory(session, true)} />
+            </div>
+            <div id="state-content" className="state-grid" aria-live="polite">
+              <StatePanels memory={memory} />
+            </div>
+          </section>
+        </main>
+        <div
+          id="toast"
+          className={toast?.visible === true ? "toast visible" : "toast"}
+          role="status"
+          aria-live="polite"
+        >
+          {toast?.text ?? ""}
+        </div>
+      </div>
+    </>
+  );
+}
