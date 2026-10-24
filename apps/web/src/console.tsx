@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
 import {
+  ApiUnreachableError,
   currentStateResponse,
   healthResponse,
   proposalsResponse,
@@ -39,7 +40,11 @@ interface InboxRow {
   phase: "in" | "out";
 }
 
-type HealthState = { phase: "checking" } | { phase: "ok" } | { phase: "error"; message: string };
+type HealthState =
+  | { phase: "checking" }
+  | { phase: "ok" }
+  | { phase: "unreachable" }
+  | { phase: "error"; message: string };
 
 type TimelineState = { phase: "idle" } | { phase: "ready"; entries: TimelineEntry[] };
 
@@ -162,6 +167,7 @@ function healthClass(health: HealthState): string {
       return "health";
     case "ok":
       return "health api-connected";
+    case "unreachable":
     case "error":
       return "health error";
     default: {
@@ -177,6 +183,8 @@ function healthLabel(health: HealthState): string {
       return "接続を確認中";
     case "ok":
       return "API 接続済み";
+    case "unreachable":
+      return ApiUnreachableError.text;
     case "error":
       return health.message;
     default: {
@@ -233,6 +241,23 @@ function RefreshIcon() {
     <Icon>
       <path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.8-2L20 11M4 13l2.1 4a7 7 0 0 0 11.8-2" />
     </Icon>
+  );
+}
+
+function OfflineNotice({ onReconnect }: { onReconnect: () => void }) {
+  return (
+    <section id="offline-notice" className="offline-notice" role="alert">
+      <div>
+        <strong>オフラインです</strong>
+        <p>
+          保存済みの画面を表示しています。API サーバー（ローカルでは{" "}
+          <code>pnpm personal:serve</code>）を起動してから再接続してください。
+        </p>
+      </div>
+      <Button type="button" size="sm" data-reconnect="" onClick={onReconnect}>
+        再接続
+      </Button>
+    </section>
   );
 }
 
@@ -702,7 +727,11 @@ export function Console() {
       healthResponse(await requestJson(current, "/health"));
       setHealth({ phase: "ok" });
     } catch (error: unknown) {
-      setHealth({ phase: "error", message: errorMessage(error) });
+      setHealth(
+        error instanceof ApiUnreachableError
+          ? { phase: "unreachable" }
+          : { phase: "error", message: errorMessage(error) },
+      );
     }
   }
 
@@ -839,6 +868,13 @@ export function Console() {
     submitting.current = false;
   }
 
+  function reconnect(current: Session): void {
+    void reloadHealth(current);
+    void reloadProposals(current);
+    void reloadTimeline(current, false);
+    void reloadMemory(current, false);
+  }
+
   function selectView(next: ViewId): void {
     setView(next);
     if (next === "timeline") void reloadTimeline(session, true);
@@ -850,10 +886,7 @@ export function Console() {
     const next = readSession(event.currentTarget);
     saveSession(next);
     setSession(next);
-    void reloadHealth(next);
-    void reloadProposals(next);
-    void reloadTimeline(next, false);
-    void reloadMemory(next, false);
+    reconnect(next);
   }
 
   async function onSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -878,11 +911,12 @@ export function Console() {
   closeComposerRef.current = closeComposer;
 
   useEffect(() => {
-    const initial = loadSession();
-    void reloadHealth(initial);
-    void reloadProposals(initial);
-    void reloadTimeline(initial, false);
-    void reloadMemory(initial, false);
+    reconnect(loadSession());
+    const onOnline = (): void => {
+      reconnect(loadSession());
+    };
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
   }, []);
 
   useEffect(() => {
@@ -973,6 +1007,9 @@ export function Console() {
               <span>{healthLabel(health)}</span>
             </div>
           </header>
+          {health.phase === "unreachable" ? (
+            <OfflineNotice onReconnect={() => reconnect(session)} />
+          ) : null}
           <section
             id="review-view"
             className={viewClass(view === "review")}
