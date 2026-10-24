@@ -85,6 +85,28 @@ it("serves health and the web index on one loopback origin", async () => {
   });
 });
 
+it("serves PWA shell assets with the content types browsers require", async () => {
+  const origin = await startServer();
+  const expected: Readonly<Record<string, string>> = {
+    "/sw.js": "text/javascript; charset=utf-8",
+    "/manifest.webmanifest": "application/manifest+json",
+    "/icon-192.png": "image/png",
+    "/favicon.ico": "image/x-icon",
+    "/assets/font.woff2": "font/woff2",
+    "/assets/data.json": "application/json",
+  };
+  for (const path of Object.keys(expected)) {
+    await writeFile(join(root, "dist", path), "asset\n");
+  }
+  const served: Record<string, string> = {};
+  for (const path of Object.keys(expected)) {
+    const response = await fetch(new URL(path, origin));
+    expect(await response.text()).toBe("asset\n");
+    served[path] = response.headers.get("content-type") ?? "";
+  }
+  expect(served).toEqual(expected);
+});
+
 it("routes the Worker's run_worker_first patterns to the API", async () => {
   const wrangler = await readFile("apps/worker/wrangler.jsonc", "utf8");
   const patterns: unknown = JSON.parse(
