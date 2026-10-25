@@ -962,7 +962,7 @@ export class SqliteProjection implements ProjectionPort {
     this.#database.prepare("DELETE FROM assertion_fts WHERE assertion_id = ?").run(assertion.id);
     this.#database
       .prepare("INSERT INTO assertion_fts (assertion_id, subject_id, object) VALUES (?, ?, ?)")
-      .run(assertion.id, assertion.subjectId, assertion.object);
+      .run(assertion.id, assertion.subjectId, ftsIndexedText(assertion.object));
   }
 
   #upsertDecision(decision: DecisionSnapshot): void {
@@ -983,15 +983,56 @@ export class SqliteProjection implements ProjectionPort {
       )
       .run(
         decision.id,
-        decision.problem,
-        decision.rationale,
-        decision.options.map((option) => option.label).join(" "),
+        ftsIndexedText(decision.problem),
+        ftsIndexedText(decision.rationale),
+        ftsIndexedText(decision.options.map((option) => option.label).join(" ")),
       );
   }
 }
 
+const JAPANESE_GRAPHEME = /^(?:\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|ー)$/u;
+
+function japaneseBigrams(text: string): readonly string[] {
+  const characters = Array.from(
+    new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text.normalize("NFKC")),
+    (segment) => segment.segment,
+  );
+  const bigrams: string[] = [];
+  let previous: string | undefined;
+  for (const character of characters) {
+    if (!JAPANESE_GRAPHEME.test(character)) {
+      previous = undefined;
+      continue;
+    }
+    if (previous !== undefined) {
+      bigrams.push(`${previous}${character}`);
+    }
+    previous = character;
+  }
+  return [...new Set(bigrams)];
+}
+
+function ftsQuote(term: string): string {
+  return `"${term.replaceAll('"', '""')}"`;
+}
+
+function ftsIndexedText(text: string): string {
+  const bigrams = japaneseBigrams(text);
+  return bigrams.length === 0 ? text : `${text} ${bigrams.join(" ")}`;
+}
+
 function ftsPhrase(query: string): string {
-  return `"${query.trim().replaceAll('"', '""')}"`;
+  const trimmed = query.trim();
+  const bigrams = japaneseBigrams(trimmed);
+  if (bigrams.length === 0) {
+    return ftsQuote(trimmed);
+  }
+  const latin = trimmed
+    .replaceAll(/\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|ー/gu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+  const terms = bigrams.map(ftsQuote);
+  return latin.length === 0 ? terms.join(" AND ") : [ftsQuote(latin), ...terms].join(" AND ");
 }
 
 export async function ensureParentDirectory(filePath: string): Promise<void> {

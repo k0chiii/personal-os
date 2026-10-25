@@ -178,14 +178,18 @@ describe("first Vertical Slice", () => {
       (await application.searchAssertions({ query: "研究" })).map((assertion) => assertion.id),
     ).toEqual([japanese.id]);
     expect(
-      (await application.searchAssertions({ query: "研究テーマ" })).map((assertion) => assertion.id),
+      (await application.searchAssertions({ query: "研究テーマ" })).map(
+        (assertion) => assertion.id,
+      ),
     ).toEqual([japanese.id]);
     expect(
       (await application.searchAssertions({ query: "研究テ" })).map((assertion) => assertion.id),
     ).toEqual([japanese.id]);
     expect(await application.searchAssertions({ query: "テーマ研" })).toEqual([]);
     expect(
-      (await application.searchAssertions({ query: "TypeScript" })).map((assertion) => assertion.id),
+      (await application.searchAssertions({ query: "TypeScript" })).map(
+        (assertion) => assertion.id,
+      ),
     ).toEqual([typed.id]);
     expect(await application.searchAssertions({ query: "Script" })).toEqual([]);
 
@@ -207,9 +211,9 @@ describe("first Vertical Slice", () => {
       actor: "owner",
       reason: "Record the research-theme Decision",
     });
-    expect(
-      (await application.searchDecisions({ query: "研究" })).map((item) => item.id),
-    ).toEqual([decision.id]);
+    expect((await application.searchDecisions({ query: "研究" })).map((item) => item.id)).toEqual([
+      decision.id,
+    ]);
     expect(
       (await application.searchDecisions({ query: "local-first" })).map((item) => item.id),
     ).toEqual([decision.id]);
