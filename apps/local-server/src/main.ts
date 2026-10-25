@@ -21,8 +21,13 @@ const HOST = "127.0.0.1";
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
   ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json",
+  ".png": "image/png",
   ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json",
+  ".woff2": "font/woff2",
 };
 
 interface Config {
