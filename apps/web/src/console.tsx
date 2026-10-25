@@ -20,7 +20,7 @@ import {
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
-import { idAfterRemoval, inboxCommand, movedId, type ReviewAction } from "./inbox.ts";
+import { idAfterRemoval, inboxCommand, inboxFocus, movedId, type ReviewAction } from "./inbox.ts";
 
 type ViewId = "review" | "search" | "timeline" | "state";
 
@@ -948,12 +948,17 @@ export function Console() {
     function onKeyDown(event: KeyboardEvent): void {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      if (event.key === "Escape" && target.closest(".reason-form") !== null) {
+      const focus = inboxFocus({
+        key: event.key,
+        inReasonForm: target.closest(".reason-form") !== null,
+        typing: target.closest("input, textarea, select, [contenteditable]") !== null,
+      });
+      if (focus === "dismiss") {
         event.preventDefault();
         closeComposerRef.current();
         return;
       }
-      if (target.closest("input, textarea, select, [contenteditable]") !== null) return;
+      if (focus === "ignore") return;
       if (viewRef.current !== "review") return;
       const command = inboxCommand(event);
       if (command === null) return;
