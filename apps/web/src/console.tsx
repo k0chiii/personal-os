@@ -105,7 +105,7 @@ function readSession(form: HTMLFormElement): Session {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unexpected error.";
+  return error instanceof Error ? error.message : "予期しないエラーです。";
 }
 
 function formatWhen(value: string): string {
@@ -211,12 +211,7 @@ function NavIcon({ view }: { view: ViewId }) {
         </Icon>
       );
     case "search":
-      return (
-        <Icon>
-          <circle cx="10.8" cy="10.8" r="6.3" />
-          <path d="m16 16 4 4" />
-        </Icon>
-      );
+      return <SearchIcon />;
     case "timeline":
       return (
         <Icon>
@@ -234,6 +229,15 @@ function NavIcon({ view }: { view: ViewId }) {
       throw new Error(String(unexpected));
     }
   }
+}
+
+function SearchIcon() {
+  return (
+    <Icon>
+      <circle cx="10.8" cy="10.8" r="6.3" />
+      <path d="m16 16 4 4" />
+    </Icon>
+  );
 }
 
 function RefreshIcon() {
@@ -529,7 +533,7 @@ function ProposalCard({
       aria-describedby="review-shortcuts"
       {...(busy ? { "aria-busy": true } : {})}
     >
-      <div className="card-body">
+      <div>
         <p className="card-tags">
           <Badge variant="outline">{proposal.assertion.kind}</Badge>
           <Badge variant="outline">{proposal.assertion.privacy}</Badge>
@@ -998,10 +1002,7 @@ export function Console() {
         </aside>
         <main id="main" className="main-content" tabIndex={-1}>
           <header className="topbar">
-            <div>
-              <h1>Personal OS</h1>
-              <p>おかえりなさい。記憶の候補を確認し、あなた自身のモデルを育てます。</p>
-            </div>
+            <h1>Personal OS</h1>
             <div id="health" className={healthClass(health)} role="status">
               <span className="health-dot" />
               <span>{healthLabel(health)}</span>
@@ -1016,15 +1017,12 @@ export function Console() {
             aria-labelledby="review-title"
           >
             <div className="section-heading">
-              <div>
-                <h2 id="review-title" tabIndex={-1}>
-                  審査待ちの提案{" "}
-                  <span id="inbox-count" className="inbox-count">
-                    {pendingText}
-                  </span>
-                </h2>
-                <p>根拠を確認してから、記憶への追加を承認してください。</p>
-              </div>
+              <h2 id="review-title" tabIndex={-1}>
+                審査待ちの提案{" "}
+                <span id="inbox-count" className="inbox-count">
+                  {pendingText}
+                </span>
+              </h2>
               <RefreshButton target="review" onClick={() => void reloadProposals(session)} />
             </div>
             <p
@@ -1072,10 +1070,7 @@ export function Console() {
             aria-labelledby="search-title"
           >
             <div className="section-heading">
-              <div>
-                <h2 id="search-title">記憶を検索</h2>
-                <p>時間とプライバシー境界を保ったまま、根拠のある記憶を探します。</p>
-              </div>
+              <h2 id="search-title">記憶を検索</h2>
             </div>
             <form
               id="search-form"
@@ -1084,10 +1079,7 @@ export function Console() {
             >
               <label htmlFor="query">質問またはキーワード</label>
               <div className="search-input-wrap">
-                <Icon>
-                  <circle cx="10.8" cy="10.8" r="6.3" />
-                  <path d="m16 16 4 4" />
-                </Icon>
+                <SearchIcon />
                 <Input
                   id="query"
                   name="query"
@@ -1122,15 +1114,12 @@ export function Console() {
             aria-labelledby="timeline-title"
           >
             <div className="section-heading">
-              <div>
-                <h2 id="timeline-title">
-                  監査タイムライン{" "}
-                  <span id="timeline-count" className="inbox-count">
-                    {timelineText}
-                  </span>
-                </h2>
-                <p>いつ、誰が、何を、なぜ変更したかを追跡できます。</p>
-              </div>
+              <h2 id="timeline-title">
+                監査タイムライン{" "}
+                <span id="timeline-count" className="inbox-count">
+                  {timelineText}
+                </span>
+              </h2>
               <RefreshButton target="timeline" onClick={() => void reloadTimeline(session, true)} />
             </div>
             <ol id="timeline-list" className="timeline" aria-live="polite">
@@ -1143,15 +1132,12 @@ export function Console() {
             aria-labelledby="state-title"
           >
             <div className="section-heading">
-              <div>
-                <h2 id="state-title">
-                  現在の状態{" "}
-                  <span id="memory-count" className="inbox-count">
-                    {memoryText}
-                  </span>
-                </h2>
-                <p>いま有効な目標・価値観・制約などを種類ごとに確認します。</p>
-              </div>
+              <h2 id="state-title">
+                現在の状態{" "}
+                <span id="memory-count" className="inbox-count">
+                  {memoryText}
+                </span>
+              </h2>
               <RefreshButton target="state" onClick={() => void reloadMemory(session, true)} />
             </div>
             <div id="state-content" className="state-grid" aria-live="polite">

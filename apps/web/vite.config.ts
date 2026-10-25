@@ -16,7 +16,7 @@ export default defineConfig({
         id: "/",
         name: "Personal OS",
         short_name: "Personal OS",
-        description: "Personal OS review, search, and timeline console",
+        description: "Personal OS のレビュー、検索、タイムライン",
         lang: "ja",
         start_url: "/",
         scope: "/",

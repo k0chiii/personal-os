@@ -11,10 +11,13 @@ describe("theme tokens", () => {
     expect(css).toContain("--sidebar: #11130f");
     expect(css).toContain("--accent: #b9f265");
     expect(css).toContain("--ink: #1c211d");
-    expect(css).toContain("--color-sidebar: #11130f");
-    expect(css).toContain("--color-primary: #b9f265");
-    expect(css).toContain("--color-accent: #b9f265");
-    expect(css).toContain("--color-foreground: #1c211d");
+    expect(css).toContain("--color-sidebar: var(--sidebar)");
+    expect(css).toContain("--color-primary: var(--accent)");
+    expect(css).toContain("--color-accent: var(--accent)");
+    expect(css).toContain("--color-foreground: var(--ink)");
+    expect(css.match(/#11130f/g)).toEqual(["#11130f"]);
+    expect(css.match(/#b9f265/g)).toEqual(["#b9f265"]);
+    expect(css.match(/#1c211d/g)).toEqual(["#1c211d"]);
     expect(css.toLowerCase()).not.toContain("violet");
     expect(css.toLowerCase()).not.toContain("purple");
     expect(css).not.toContain("#71717a");

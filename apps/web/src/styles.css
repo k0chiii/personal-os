@@ -1,23 +1,23 @@
 @import "tailwindcss" source(".");
 
 @theme inline {
-  --color-background: #eceee9;
-  --color-foreground: #1c211d;
-  --color-primary: #b9f265;
-  --color-primary-foreground: #1c211d;
-  --color-secondary: #f8f9f6;
-  --color-secondary-foreground: #1c211d;
+  --color-background: var(--background);
+  --color-foreground: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--ink);
+  --color-secondary: var(--surface);
+  --color-secondary-foreground: var(--ink);
   --color-muted: #e7ebe4;
-  --color-muted-foreground: #697069;
-  --color-accent: #b9f265;
-  --color-accent-foreground: #1c211d;
-  --color-destructive: #b94e3b;
-  --color-border: #dfe3dd;
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--danger);
+  --color-border: var(--line);
   --color-input: #d5dad3;
-  --color-ring: #b9f265;
+  --color-ring: var(--accent);
   --color-field: #fafbf9;
-  --color-paper: #ffffff;
-  --color-sidebar: #11130f;
+  --color-paper: var(--paper);
+  --color-sidebar: var(--sidebar);
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
@@ -25,10 +25,11 @@
 }
 
 :root {
-  color: #1c211d;
-  background: #eceee9;
+  color: var(--ink);
+  background: var(--background);
   font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
   font-synthesis: none;
+  --background: #eceee9;
   --ink: #1c211d;
   --muted: #697069;
   --muted-2: #8c938c;
@@ -186,7 +187,7 @@ svg {
 .tab b {
   min-width: 1.45rem;
   padding: 0.12rem 0.4rem;
-  color: #11130f;
+  color: var(--sidebar);
   font-size: 0.68rem;
   text-align: center;
   border-radius: 999px;
@@ -276,15 +277,10 @@ p {
   margin-top: 0;
 }
 h1 {
-  margin-bottom: 0.3rem;
+  margin-bottom: 0;
   font-size: clamp(1.7rem, 3vw, 2.2rem);
   line-height: 1.15;
   letter-spacing: -0.045em;
-}
-.topbar > div > p:last-child {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 .health {
   display: flex;
@@ -298,7 +294,6 @@ h1 {
   border-radius: 999px;
   background: var(--paper);
 }
-.health.ok .health-dot,
 .health.api-connected .health-dot {
   background: #69af31;
   box-shadow: 0 0 0 4px rgba(105, 175, 49, 0.12);
@@ -356,14 +351,9 @@ h1 {
   margin-bottom: 1.2rem;
 }
 .section-heading h2 {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0;
   font-size: 1.25rem;
   letter-spacing: -0.03em;
-}
-.section-heading p {
-  margin-bottom: 0;
-  color: var(--muted);
-  font-size: 0.78rem;
 }
 .icon-button svg {
   width: 0.9rem;
@@ -425,7 +415,7 @@ h1 {
   margin-left: 0.35rem;
   padding: 0.1rem 0.45rem;
   place-items: center;
-  color: #11130f;
+  color: var(--sidebar);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0;
@@ -830,9 +820,6 @@ kbd {
   .topbar {
     margin-bottom: 1.3rem;
   }
-  .topbar > div > p:last-child {
-    display: none;
-  }
   .health > span:last-child {
     display: none;
   }
@@ -841,9 +828,6 @@ kbd {
   }
   .section-heading {
     align-items: flex-start;
-  }
-  .section-heading p {
-    max-width: 32ch;
   }
   .card {
     grid-template-columns: 1fr;
