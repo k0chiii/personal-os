@@ -26,6 +26,18 @@ export function inboxCommand(input: KeyInput): InboxCommand | null {
   return KEY_COMMANDS[key] ?? null;
 }
 
+export type InboxFocus = "dismiss" | "ignore" | "pass";
+
+export function inboxFocus(input: {
+  key: string;
+  inReasonForm: boolean;
+  typing: boolean;
+}): InboxFocus {
+  if (input.key === "Escape" && input.inReasonForm) return "dismiss";
+  if (input.typing) return "ignore";
+  return "pass";
+}
+
 export function movedId(
   ids: readonly string[],
   currentId: string | null,

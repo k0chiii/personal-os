@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { idAfterRemoval, inboxCommand, movedId } from "./inbox.ts";
+import { idAfterRemoval, inboxCommand, inboxFocus, movedId } from "./inbox.ts";
 
 const plain = { altKey: false, ctrlKey: false, metaKey: false };
 
@@ -40,6 +40,25 @@ describe("movedId", () => {
 
   it("returns null for an empty inbox", () => {
     expect(movedId([], null, 1)).toBeNull();
+  });
+});
+
+describe("inboxFocus", () => {
+  it("closes the reason form on Escape even while that field is focused", () => {
+    expect(inboxFocus({ key: "Escape", inReasonForm: true, typing: true })).toBe("dismiss");
+  });
+
+  it("does not dismiss Escape outside the reason form", () => {
+    expect(inboxFocus({ key: "Escape", inReasonForm: false, typing: false })).toBe("pass");
+  });
+
+  it("drops review keys while a field is focused", () => {
+    expect(inboxFocus({ key: "j", inReasonForm: false, typing: true })).toBe("ignore");
+    expect(inboxFocus({ key: "a", inReasonForm: true, typing: true })).toBe("ignore");
+  });
+
+  it("lets review keys through when focus is on the page", () => {
+    expect(inboxFocus({ key: "j", inReasonForm: false, typing: false })).toBe("pass");
   });
 });
 
