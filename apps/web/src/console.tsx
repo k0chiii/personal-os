@@ -684,7 +684,7 @@ function DialogueView({
       <h2 id="dialogue-title">対話</h2>
       <div
         ref={logRef}
-        className="dialogue-log"
+        className={rows.length === 0 ? "dialogue-log is-empty" : "dialogue-log"}
         role="log"
         aria-live="polite"
         aria-label="対話の記録"
@@ -693,14 +693,14 @@ function DialogueView({
         {rows.map((turn) => (
           <article key={turn.id}>
             <p className="dialogue-owner">{turn.owner.text}</p>
-            {turn.phase === "sending" ? <p className="dialogue-system">探しています</p> : null}
-            {turn.phase === "reply"
-              ? turn.system.paragraphs.map((paragraph, index) => (
-                  <p key={index} className="dialogue-system">
-                    {paragraph}
-                  </p>
-                ))
-              : null}
+            {turn.phase === "sending" ? <p className="dialogue-status">探しています</p> : null}
+            {turn.phase === "reply" ? (
+              <div className="dialogue-system">
+                {turn.system.paragraphs.map((paragraph, index) => (
+                  <p key={index}>{paragraph}</p>
+                ))}
+              </div>
+            ) : null}
             {turn.phase === "failed" ? (
               <div className="dialogue-system">
                 <p>送れませんでした。</p>
@@ -725,6 +725,7 @@ function DialogueView({
         <label htmlFor="dialogue-draft">メッセージ</label>
         <textarea
           id="dialogue-draft"
+          rows={1}
           value={draft}
           placeholder="記憶に聞く"
           onChange={(event) => onDraft(event.target.value)}
@@ -734,7 +735,7 @@ function DialogueView({
             event.currentTarget.form?.requestSubmit();
           }}
         />
-        <button type="submit" disabled={sending}>
+        <button type="submit" disabled={sending || draft.trim() === ""}>
           送る
         </button>
       </form>
