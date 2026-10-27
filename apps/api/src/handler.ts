@@ -1,8 +1,13 @@
 import {
   DecisionSimulator,
   PersonalOsApplication,
+  openQuestions,
+  wordingOrTemplate,
   type ContextPack,
   type DecisionSimulation,
+  type OpenQuestion,
+  type QuestionAssertion,
+  type QuestionWording,
 } from "@personal-os/application";
 import {
   ASSERTION_KINDS,
@@ -10,6 +15,7 @@ import {
   EVIDENCE_SOURCE_TYPES,
   PRIVACY_CLASSES,
   type AssertionKind,
+  type AssertionSnapshot,
   type EpistemicOrigin,
   type EvidenceSourceType,
   type PrivacyClass,
@@ -28,6 +34,7 @@ export interface ApiDependencies {
   readonly simulator?: DecisionSimulator;
   readonly rateLimiter?: ApiRateLimiter;
   readonly authenticator?: ApiAuthenticator;
+  readonly wording?: QuestionWording;
 }
 
 export interface ApiPrincipal {
@@ -185,6 +192,28 @@ export function createApiHandler(
             ...(limit === null ? {} : { limit: Number.parseInt(limit, 10) }),
           }),
         );
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/questions") {
+        const kinds = parseKindsQuery(url.searchParams.get("kinds"));
+        if (kinds === null) return json({ questions: [] });
+        const [state, proposals] = await Promise.all([
+          dependencies.application.getCurrentState(),
+          dependencies.application.listProposals("pending"),
+        ]);
+        const assertions = [...state.preferences, ...Object.values(state.intents).flat()].map(
+          questionAssertion,
+        );
+        return json({
+          questions: await rewriteQuestions(
+            openQuestions({
+              assertions,
+              kinds,
+              pendingKinds: proposals.map((proposal) => proposal.assertion.kind),
+            }),
+            dependencies.wording,
+          ),
+        });
       }
 
       const assertionMatch = /^\/v1\/assertions\/([^/]+)$/.exec(url.pathname);
@@ -436,6 +465,51 @@ function privacyField(body: Record<string, unknown>, key: string): readonly Priv
     }
     return matched;
   });
+}
+
+function parseKindsQuery(value: string | null): readonly AssertionKind[] | null {
+  if (value === null || value.trim().length === 0) return null;
+  return value.split(",").map((token) => {
+    const kind = token.trim();
+    const matched = ASSERTION_KINDS.find((candidate) => candidate === kind);
+    if (matched === undefined) {
+      throw new TypeError("kinds contains an unsupported Assertion kind.");
+    }
+    return matched;
+  });
+}
+
+function questionAssertion(assertion: AssertionSnapshot): QuestionAssertion {
+  return {
+    kind: assertion.kind,
+    subjectId: assertion.subjectId,
+    predicate: assertion.predicate,
+    object: assertion.object,
+    privacy: assertion.privacy,
+    evidenceIds: assertion.evidenceIds,
+    status: assertion.status,
+  };
+}
+
+async function rewriteQuestions(
+  questions: readonly OpenQuestion[],
+  wording: QuestionWording | undefined,
+): Promise<readonly OpenQuestion[]> {
+  if (wording === undefined) return questions;
+  return Promise.all(questions.map((question) => rewriteQuestion(question, wording)));
+}
+
+async function rewriteQuestion(
+  question: OpenQuestion,
+  wording: QuestionWording,
+): Promise<OpenQuestion> {
+  let modelText = "";
+  try {
+    modelText = await wording.rewrite(question.prompt);
+  } catch {
+    modelText = "";
+  }
+  return { ...question, prompt: wordingOrTemplate(question.kind, question.prompt, modelText) };
 }
 
 function parsePrivacyQuery(value: string): readonly PrivacyClass[] {

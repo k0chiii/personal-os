@@ -1,11 +1,25 @@
+import {
+  IconCheckbox,
+  IconChevronRight,
+  IconCircleCheck,
+  IconHistory,
+  IconList,
+  IconMessageQuestion,
+  IconPlug,
+  IconRefresh,
+  IconSearch,
+} from "@tabler/icons-react";
+import type { Icon } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 
 import {
   ApiUnreachableError,
+  createdEvidenceId,
   currentStateResponse,
   healthResponse,
   proposalsResponse,
+  questionsResponse,
   requestJson,
   searchResponse,
   timelineResponse,
@@ -13,16 +27,21 @@ import {
   type CurrentState,
   type Decision,
   type Proposal,
+  type Question,
   type SearchResults,
   type Session,
   type TimelineEntry,
 } from "./api.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.tsx";
+import { Checkbox } from "./components/ui/checkbox.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { Label } from "./components/ui/label.tsx";
+import { RadioGroup, RadioGroupItem } from "./components/ui/radio-group.tsx";
 import { idAfterRemoval, inboxCommand, inboxFocus, movedId, type ReviewAction } from "./inbox.ts";
 
-type ViewId = "review" | "search" | "timeline" | "state";
+type ViewId = "review" | "search" | "timeline" | "state" | "ask";
 
 type Composer =
   | { phase: "closed" }
@@ -73,6 +92,7 @@ const NAV: readonly { id: ViewId; label: string }[] = [
   { id: "search", label: "検索" },
   { id: "timeline", label: "タイムライン" },
   { id: "state", label: "現在の状態" },
+  { id: "ask", label: "質問" },
 ];
 
 const PRIVACY_OPTIONS: readonly { value: string; label: string; checked: boolean }[] = [
@@ -81,6 +101,33 @@ const PRIVACY_OPTIONS: readonly { value: string; label: string; checked: boolean
   { value: "P2", label: "P2 機微", checked: false },
   { value: "P3", label: "P3 厳格", checked: false },
 ];
+
+const ASK_KINDS: readonly { value: string; label: string }[] = [
+  { value: "preference", label: "好み" },
+  { value: "goal", label: "目標" },
+  { value: "project", label: "プロジェクト" },
+  { value: "artifact", label: "成果物" },
+  { value: "research_topic", label: "研究テーマ" },
+  { value: "value", label: "価値観" },
+  { value: "belief", label: "信念" },
+  { value: "constraint", label: "制約" },
+];
+
+const ASK_PRIVACY = ["P0", "P1", "P2", "P3"] as const;
+
+function uuidV7(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let timestamp = BigInt(Date.now());
+  for (let index = 5; index >= 0; index -= 1) {
+    bytes[index] = Number(timestamp & 0xffn);
+    timestamp >>= 8n;
+  }
+  bytes[6] = (bytes[6]! & 0x0f) | 0x70;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 function loadSession(): Session {
   return {
@@ -194,58 +241,17 @@ function healthLabel(health: HealthState): string {
   }
 }
 
-function Icon({ children }: { children: ReactNode }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {children}
-    </svg>
-  );
-}
+const NAV_ICONS = {
+  review: IconCheckbox,
+  search: IconSearch,
+  timeline: IconHistory,
+  state: IconList,
+  ask: IconMessageQuestion,
+} as const satisfies Record<ViewId, Icon>;
 
 function NavIcon({ view }: { view: ViewId }) {
-  switch (view) {
-    case "review":
-      return (
-        <Icon>
-          <path d="M9 11l2 2 4-4M5 4h14v16H5z" />
-        </Icon>
-      );
-    case "search":
-      return <SearchIcon />;
-    case "timeline":
-      return (
-        <Icon>
-          <path d="M12 7v5l3 2M4 12a8 8 0 1 0 2.3-5.7L4 8.6V4" />
-        </Icon>
-      );
-    case "state":
-      return (
-        <Icon>
-          <path d="M4 6h16M4 12h10M4 18h13" />
-        </Icon>
-      );
-    default: {
-      const unexpected: never = view;
-      throw new Error(String(unexpected));
-    }
-  }
-}
-
-function SearchIcon() {
-  return (
-    <Icon>
-      <circle cx="10.8" cy="10.8" r="6.3" />
-      <path d="m16 16 4 4" />
-    </Icon>
-  );
-}
-
-function RefreshIcon() {
-  return (
-    <Icon>
-      <path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.8-2L20 11M4 13l2.1 4a7 7 0 0 0 11.8-2" />
-    </Icon>
-  );
+  const Glyph = NAV_ICONS[view];
+  return <Glyph size={20} stroke={1.75} aria-hidden="true" />;
 }
 
 function OfflineNotice({ onReconnect }: { onReconnect: () => void }) {
@@ -281,7 +287,7 @@ function RefreshButton({
       data-refresh={target}
       onClick={onClick}
     >
-      <RefreshIcon />
+      <IconRefresh size={16} stroke={1.75} aria-hidden="true" />
       更新
     </Button>
   );
@@ -347,9 +353,7 @@ function ConnectionForm({
         <span>
           <strong>API 設定</strong>
         </span>
-        <Icon>
-          <path d="m9 6 6 6-6 6" />
-        </Icon>
+        <IconChevronRight size={16} stroke={1.75} aria-hidden="true" />
       </summary>
       <form id="connection-form" className="connection-form" onSubmit={onSubmit}>
         <label htmlFor="api-base">API の URL</label>
@@ -386,9 +390,7 @@ function InboxEmpty({ loaded }: { loaded: boolean }) {
       <div className="empty-state">
         <div>
           <span className="empty-state-icon">
-            <Icon>
-              <path d="M5 4h14v16H5zM9 9h6M9 13h4" />
-            </Icon>
+            <IconPlug size={22} stroke={1.75} aria-hidden="true" />
           </span>
           <h3>API に接続してください</h3>
         </div>
@@ -399,10 +401,7 @@ function InboxEmpty({ loaded }: { loaded: boolean }) {
     <div className="empty-state inbox-empty">
       <div>
         <span className="empty-state-icon">
-          <Icon>
-            <path d="m7 12 3 3 7-7" />
-            <circle cx="12" cy="12" r="9" />
-          </Icon>
+          <IconCircleCheck size={22} stroke={1.75} aria-hidden="true" />
         </span>
         <h3>すべて確認済みです</h3>
         <code className="empty-command">pnpm personal evidence import {"<file>"}</code>
@@ -693,6 +692,51 @@ function StatePanels({ memory }: { memory: MemoryState }) {
   ));
 }
 
+function QuestionForm({
+  question,
+  index,
+  onSubmit,
+}: {
+  question: Question;
+  index: number;
+  onSubmit: (
+    event: FormEvent<HTMLFormElement>,
+    question: Question,
+    privacy: string,
+  ) => void | Promise<void>;
+}) {
+  const answerId = `ask-answer-${index}`;
+  const [privacy, setPrivacy] = useState("P1");
+  return (
+    <Card>
+      <form onSubmit={(event) => void onSubmit(event, question, privacy)}>
+        <CardHeader>
+          <CardTitle>
+            <Label htmlFor={answerId}>{question.prompt}</Label>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex gap-2">
+            <Input id={answerId} name="answer" required />
+            <Button type="submit">送る</Button>
+          </div>
+          <RadioGroup value={privacy} onValueChange={setPrivacy}>
+            {ASK_PRIVACY.map((item) => {
+              const itemId = `${answerId}-${item}`;
+              return (
+                <div key={item} className="flex items-center gap-2">
+                  <RadioGroupItem value={item} id={itemId} />
+                  <Label htmlFor={itemId}>{item}</Label>
+                </div>
+              );
+            })}
+          </RadioGroup>
+        </CardContent>
+      </form>
+    </Card>
+  );
+}
+
 export function Console() {
   const [session, setSession] = useState(loadSession);
   const [health, setHealth] = useState<HealthState>({ phase: "checking" });
@@ -702,10 +746,14 @@ export function Console() {
   const [timeline, setTimeline] = useState<TimelineState>({ phase: "idle" });
   const [memory, setMemory] = useState<MemoryState>({ phase: "idle" });
   const [search, setSearch] = useState<SearchState>({ phase: "idle" });
+  const [askedKinds, setAskedKinds] = useState<readonly string[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [composer, setComposer] = useState<Composer>({ phase: "closed" });
   const [toast, setToast] = useState<ToastState | null>(null);
   const focusReason = useRef(false);
   const submitting = useRef(false);
+  const answering = useRef(false);
+  const askRequest = useRef(0);
   const rowsRef = useRef(rows);
   const viewRef = useRef(view);
   const composerRef = useRef(composer);
@@ -891,6 +939,81 @@ export function Console() {
     saveSession(next);
     setSession(next);
     reconnect(next);
+  }
+
+  async function loadQuestions(current: Session, kinds: readonly string[]): Promise<void> {
+    const requestId = askRequest.current + 1;
+    askRequest.current = requestId;
+    if (kinds.length === 0) {
+      setQuestions([]);
+      return;
+    }
+    try {
+      const next = questionsResponse(
+        await requestJson(current, `/v1/questions?kinds=${encodeURIComponent(kinds.join(","))}`),
+      );
+      if (askRequest.current !== requestId) return;
+      setQuestions(next);
+    } catch (error: unknown) {
+      if (askRequest.current !== requestId) return;
+      showToast(errorMessage(error));
+    }
+  }
+
+  function toggleAskedKind(kind: string, checked: boolean): void {
+    const kinds = ASK_KINDS.map((item) => item.value).filter((value) =>
+      value === kind ? checked : askedKinds.includes(value),
+    );
+    setAskedKinds(kinds);
+    void loadQuestions(session, kinds);
+  }
+
+  async function submitAnswer(
+    event: FormEvent<HTMLFormElement>,
+    question: Question,
+    privacy: string,
+  ): Promise<void> {
+    event.preventDefault();
+    if (answering.current) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const answerValue = data.get("answer");
+    const answer = typeof answerValue === "string" ? answerValue : "";
+    answering.current = true;
+    try {
+      const evidenceId = createdEvidenceId(
+        await requestJson(session, "/v1/evidence", {
+          content: answer,
+          sourceType: "plain_text",
+          sourceUri: null,
+          occurredAt: null,
+          author: null,
+          privacy,
+          mediaType: "text/plain",
+          actor: "web-owner",
+          reason: "質問への回答",
+        }),
+      );
+      await requestJson(session, "/v1/proposals", {
+        subjectId: uuidV7(),
+        kind: question.kind,
+        object: answer,
+        evidenceIds: [evidenceId],
+        epistemicOrigin: "self_stated",
+        validFrom: new Date().toISOString(),
+        validUntil: null,
+        privacy,
+        createdBy: "user",
+        actor: "web-owner",
+        reason: "質問への回答",
+      });
+      form.reset();
+      await loadQuestions(session, askedKinds);
+    } catch (error: unknown) {
+      showToast(errorMessage(error));
+    } finally {
+      answering.current = false;
+    }
   }
 
   async function onSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -1084,7 +1207,7 @@ export function Console() {
             >
               <label htmlFor="query">質問またはキーワード</label>
               <div className="search-input-wrap">
-                <SearchIcon />
+                <IconSearch size={16} stroke={1.75} aria-hidden="true" />
                 <Input
                   id="query"
                   name="query"
@@ -1148,6 +1271,43 @@ export function Console() {
             <div id="state-content" className="state-grid" aria-live="polite">
               <StatePanels memory={memory} />
             </div>
+          </section>
+          <section id="ask-view" className={viewClass(view === "ask")} aria-labelledby="ask-title">
+            <div className="section-heading">
+              <h2 id="ask-title">質問</h2>
+            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>種類</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                {ASK_KINDS.map((kind) => {
+                  const id = `ask-kind-${kind.value}`;
+                  return (
+                    <div key={kind.value} className="flex items-center gap-2">
+                      <Checkbox
+                        id={id}
+                        checked={askedKinds.includes(kind.value)}
+                        onCheckedChange={(checked) => toggleAskedKind(kind.value, checked === true)}
+                      />
+                      <Label htmlFor={id}>{kind.label}</Label>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+            {questions.length === 0 ? null : (
+              <div className="result-list">
+                {questions.map((question, index) => (
+                  <QuestionForm
+                    key={`${question.kind}-${question.code}-${index}`}
+                    question={question}
+                    index={index}
+                    onSubmit={submitAnswer}
+                  />
+                ))}
+              </div>
+            )}
           </section>
         </main>
         <div

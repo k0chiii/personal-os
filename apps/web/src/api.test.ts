@@ -2,7 +2,9 @@ import { afterEach, expect, it } from "vite-plus/test";
 
 import {
   ApiUnreachableError,
+  createdEvidenceId,
   healthResponse,
+  questionsResponse,
   requestJson,
   searchResponse,
   type Session,
@@ -73,6 +75,23 @@ it("accepts only an ok health payload", () => {
 it("rejects a search payload that is missing its lists", () => {
   expect(() => searchResponse({ assertions: [] })).toThrow("API returned invalid search results.");
   expect(() => searchResponse(null)).toThrow("API returned invalid search results.");
+});
+
+it("reads questions and rejects an unknown code", () => {
+  expect(
+    questionsResponse({
+      questions: [{ kind: "goal", code: "missing", prompt: "いまの目標を一言で教えてください。" }],
+    }),
+  ).toEqual([{ kind: "goal", code: "missing", prompt: "いまの目標を一言で教えてください。" }]);
+  expect(() =>
+    questionsResponse({ questions: [{ kind: "goal", code: "other", prompt: "x" }] }),
+  ).toThrow("Invalid question.");
+  expect(() => questionsResponse(null)).toThrow("API returned an invalid question list.");
+});
+
+it("reads the created evidence id", () => {
+  expect(createdEvidenceId({ evidence: { id: "evidence-1" } })).toBe("evidence-1");
+  expect(() => createdEvidenceId({ evidence: {} })).toThrow("API response is missing id.");
 });
 
 it("reads assertions and decisions from a search payload", () => {

@@ -29,6 +29,12 @@ export interface WorkerEnvironment {
   readonly REQUIRE_ACCESS?: string;
   readonly OPENAI_API_KEY?: string;
   readonly OPENAI_MODEL?: string;
+  readonly AI?: {
+    run(
+      model: string,
+      input: { messages: readonly { role: "system" | "user"; content: string }[] },
+    ): Promise<unknown>;
+  };
 }
 
 function application(environment: WorkerEnvironment): PersonalOsApplication {
@@ -61,6 +67,35 @@ export class CloudflareNativeRateLimiter implements ApiRateLimiter {
     const result = await this.#binding.limit({ key });
     return { allowed: result.success, retryAfterSeconds: result.success ? 0 : 60 };
   }
+}
+
+const QUESTION_REWRITE_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const QUESTION_REWRITE_SYSTEM =
+  "次の一文を、同じ種類の名前を残したまま、日本語の一文に短く書き直す。説明や前置きは書かない。";
+
+function workersAiWording(ai: NonNullable<WorkerEnvironment["AI"]>): {
+  rewrite(prompt: string): Promise<string>;
+} {
+  return {
+    async rewrite(prompt: string): Promise<string> {
+      const result = await ai.run(QUESTION_REWRITE_MODEL, {
+        messages: [
+          { role: "system", content: QUESTION_REWRITE_SYSTEM },
+          { role: "user", content: prompt },
+        ],
+      });
+      return workersAiText(result);
+    },
+  };
+}
+
+function workersAiText(result: unknown): string {
+  if (typeof result === "string") return result;
+  if (typeof result === "object" && result !== null && "response" in result) {
+    const response = result.response;
+    if (typeof response === "string") return response;
+  }
+  return "";
 }
 
 function accessAuthenticator(required: boolean): ApiAuthenticator | undefined {
@@ -100,11 +135,13 @@ export default {
             },
           );
     const authenticator = accessAuthenticator(environment.REQUIRE_ACCESS === "true");
+    const ai = environment.AI;
     return createApiHandler({
       application: personalOs,
       rateLimiter: new CloudflareNativeRateLimiter(environment.RATE_LIMITER),
       ...(authenticator === undefined ? {} : { authenticator }),
       ...(simulator === undefined ? {} : { simulator }),
+      ...(ai === undefined ? {} : { wording: workersAiWording(ai) }),
     })(request);
   },
 };
