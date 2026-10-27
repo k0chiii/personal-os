@@ -3,9 +3,11 @@ import type { FormEvent, ReactNode } from "react";
 
 import {
   ApiUnreachableError,
+  createdEvidenceId,
   currentStateResponse,
   healthResponse,
   proposalsResponse,
+  questionsResponse,
   requestJson,
   searchResponse,
   timelineResponse,
@@ -13,6 +15,7 @@ import {
   type CurrentState,
   type Decision,
   type Proposal,
+  type Question,
   type SearchResults,
   type Session,
   type TimelineEntry,
@@ -22,7 +25,7 @@ import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { idAfterRemoval, inboxCommand, inboxFocus, movedId, type ReviewAction } from "./inbox.ts";
 
-type ViewId = "review" | "search" | "timeline" | "state";
+type ViewId = "review" | "search" | "timeline" | "state" | "ask";
 
 type Composer =
   | { phase: "closed" }
@@ -73,6 +76,7 @@ const NAV: readonly { id: ViewId; label: string }[] = [
   { id: "search", label: "検索" },
   { id: "timeline", label: "タイムライン" },
   { id: "state", label: "現在の状態" },
+  { id: "ask", label: "質問" },
 ];
 
 const PRIVACY_OPTIONS: readonly { value: string; label: string; checked: boolean }[] = [
@@ -81,6 +85,39 @@ const PRIVACY_OPTIONS: readonly { value: string; label: string; checked: boolean
   { value: "P2", label: "P2 機微", checked: false },
   { value: "P3", label: "P3 厳格", checked: false },
 ];
+
+const ASK_KINDS: readonly { value: string; label: string }[] = [
+  { value: "preference", label: "好み" },
+  { value: "goal", label: "目標" },
+  { value: "project", label: "プロジェクト" },
+  { value: "artifact", label: "成果物" },
+  { value: "research_topic", label: "研究テーマ" },
+  { value: "value", label: "価値観" },
+  { value: "belief", label: "信念" },
+  { value: "constraint", label: "制約" },
+];
+
+const ASK_PRIVACY = ["P0", "P1", "P2", "P3"] as const;
+
+function uuidV7(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let timestamp = BigInt(Date.now());
+  for (let index = 5; index >= 0; index -= 1) {
+    bytes[index] = Number(timestamp & 0xffn);
+    timestamp >>= 8n;
+  }
+  bytes[6] = (bytes[6]! & 0x0f) | 0x70;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function checkedKinds(form: HTMLFormElement): string[] {
+  return new FormData(form)
+    .getAll("kind")
+    .filter((value): value is string => typeof value === "string");
+}
 
 function loadSession(): Session {
   return {
@@ -222,6 +259,12 @@ function NavIcon({ view }: { view: ViewId }) {
       return (
         <Icon>
           <path d="M4 6h16M4 12h10M4 18h13" />
+        </Icon>
+      );
+    case "ask":
+      return (
+        <Icon>
+          <path d="M5 5h14v14H5z" />
         </Icon>
       );
     default: {
@@ -693,6 +736,38 @@ function StatePanels({ memory }: { memory: MemoryState }) {
   ));
 }
 
+function QuestionForm({
+  question,
+  index,
+  onSubmit,
+}: {
+  question: Question;
+  index: number;
+  onSubmit: (event: FormEvent<HTMLFormElement>, question: Question) => void | Promise<void>;
+}) {
+  const answerId = `ask-answer-${index}`;
+  return (
+    <form className="search-panel result" onSubmit={(event) => void onSubmit(event, question)}>
+      <h3>
+        <label htmlFor={answerId}>{question.prompt}</label>
+      </h3>
+      <div className="search-input-wrap">
+        <Input id={answerId} name="answer" required />
+        <Button type="submit">送る</Button>
+      </div>
+      <fieldset>
+        <legend>区分</legend>
+        {ASK_PRIVACY.map((privacy) => (
+          <label key={privacy}>
+            <input type="radio" name="privacy" value={privacy} defaultChecked={privacy === "P1"} />
+            <span>{privacy}</span>
+          </label>
+        ))}
+      </fieldset>
+    </form>
+  );
+}
+
 export function Console() {
   const [session, setSession] = useState(loadSession);
   const [health, setHealth] = useState<HealthState>({ phase: "checking" });
@@ -702,10 +777,14 @@ export function Console() {
   const [timeline, setTimeline] = useState<TimelineState>({ phase: "idle" });
   const [memory, setMemory] = useState<MemoryState>({ phase: "idle" });
   const [search, setSearch] = useState<SearchState>({ phase: "idle" });
+  const [askedKinds, setAskedKinds] = useState<readonly string[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [composer, setComposer] = useState<Composer>({ phase: "closed" });
   const [toast, setToast] = useState<ToastState | null>(null);
   const focusReason = useRef(false);
   const submitting = useRef(false);
+  const answering = useRef(false);
+  const askRequest = useRef(0);
   const rowsRef = useRef(rows);
   const viewRef = useRef(view);
   const composerRef = useRef(composer);
@@ -891,6 +970,80 @@ export function Console() {
     saveSession(next);
     setSession(next);
     reconnect(next);
+  }
+
+  async function loadQuestions(current: Session, kinds: readonly string[]): Promise<void> {
+    const requestId = askRequest.current + 1;
+    askRequest.current = requestId;
+    if (kinds.length === 0) {
+      setQuestions([]);
+      return;
+    }
+    try {
+      const next = questionsResponse(
+        await requestJson(current, `/v1/questions?kinds=${encodeURIComponent(kinds.join(","))}`),
+      );
+      if (askRequest.current !== requestId) return;
+      setQuestions(next);
+    } catch (error: unknown) {
+      if (askRequest.current !== requestId) return;
+      showToast(errorMessage(error));
+    }
+  }
+
+  function changeAskedKinds(event: FormEvent<HTMLFormElement>): void {
+    const kinds = checkedKinds(event.currentTarget);
+    setAskedKinds(kinds);
+    void loadQuestions(session, kinds);
+  }
+
+  async function submitAnswer(
+    event: FormEvent<HTMLFormElement>,
+    question: Question,
+  ): Promise<void> {
+    event.preventDefault();
+    if (answering.current) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const answerValue = data.get("answer");
+    const privacyValue = data.get("privacy");
+    const answer = typeof answerValue === "string" ? answerValue : "";
+    const privacy = typeof privacyValue === "string" ? privacyValue : "P1";
+    answering.current = true;
+    try {
+      const evidenceId = createdEvidenceId(
+        await requestJson(session, "/v1/evidence", {
+          content: answer,
+          sourceType: "plain_text",
+          sourceUri: null,
+          occurredAt: null,
+          author: null,
+          privacy,
+          mediaType: "text/plain",
+          actor: "web-owner",
+          reason: "質問への回答",
+        }),
+      );
+      await requestJson(session, "/v1/proposals", {
+        subjectId: uuidV7(),
+        kind: question.kind,
+        object: answer,
+        evidenceIds: [evidenceId],
+        epistemicOrigin: "self_stated",
+        validFrom: new Date().toISOString(),
+        validUntil: null,
+        privacy,
+        createdBy: "user",
+        actor: "web-owner",
+        reason: "質問への回答",
+      });
+      form.reset();
+      await loadQuestions(session, askedKinds);
+    } catch (error: unknown) {
+      showToast(errorMessage(error));
+    } finally {
+      answering.current = false;
+    }
   }
 
   async function onSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -1148,6 +1301,39 @@ export function Console() {
             <div id="state-content" className="state-grid" aria-live="polite">
               <StatePanels memory={memory} />
             </div>
+          </section>
+          <section id="ask-view" className={viewClass(view === "ask")} aria-labelledby="ask-title">
+            <div className="section-heading">
+              <h2 id="ask-title">質問</h2>
+            </div>
+            <form
+              id="ask-kinds"
+              className="search-panel"
+              onSubmit={(event) => event.preventDefault()}
+              onChange={(event) => changeAskedKinds(event)}
+            >
+              <fieldset>
+                <legend>種類</legend>
+                {ASK_KINDS.map((kind) => (
+                  <label key={kind.value}>
+                    <input type="checkbox" name="kind" value={kind.value} />
+                    <span>{kind.label}</span>
+                  </label>
+                ))}
+              </fieldset>
+            </form>
+            {questions.length === 0 ? null : (
+              <div className="result-list">
+                {questions.map((question, index) => (
+                  <QuestionForm
+                    key={`${question.kind}-${question.code}-${index}`}
+                    question={question}
+                    index={index}
+                    onSubmit={submitAnswer}
+                  />
+                ))}
+              </div>
+            )}
           </section>
         </main>
         <div

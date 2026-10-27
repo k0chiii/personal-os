@@ -190,6 +190,38 @@ function decisionResponse(value: unknown): Decision {
   };
 }
 
+export interface Question {
+  kind: string;
+  code: "missing" | "conflict" | "uncited";
+  prompt: string;
+}
+
+const QUESTION_CODES = ["missing", "conflict", "uncited"] as const;
+
+export function questionsResponse(value: unknown): Question[] {
+  if (!isRecord(value) || !Array.isArray(value.questions)) {
+    throw new Error("API returned an invalid question list.");
+  }
+  return value.questions.map((item) => {
+    if (!isRecord(item)) throw new Error("Invalid question.");
+    const code = stringField(item, "code");
+    const matched = QUESTION_CODES.find((candidate) => candidate === code);
+    if (matched === undefined) throw new Error("Invalid question.");
+    return {
+      kind: stringField(item, "kind"),
+      code: matched,
+      prompt: stringField(item, "prompt"),
+    };
+  });
+}
+
+export function createdEvidenceId(value: unknown): string {
+  if (!isRecord(value) || !isRecord(value.evidence)) {
+    throw new Error("API returned invalid evidence.");
+  }
+  return stringField(value.evidence, "id");
+}
+
 export function searchResponse(value: unknown): SearchResults {
   if (!isRecord(value) || !Array.isArray(value.assertions) || !Array.isArray(value.decisions)) {
     throw new Error("API returned invalid search results.");
