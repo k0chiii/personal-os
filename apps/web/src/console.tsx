@@ -1,17 +1,17 @@
 import {
   IconCheckbox,
   IconChevronRight,
-  IconCircleCheck,
   IconHistory,
   IconList,
+  IconMenu2,
   IconMessageQuestion,
-  IconPlug,
   IconRefresh,
   IconSearch,
+  IconX,
 } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import {
   ApiUnreachableError,
@@ -43,20 +43,12 @@ import { idAfterRemoval, inboxCommand, inboxFocus, movedId, type ReviewAction } 
 
 type ViewId = "review" | "search" | "timeline" | "state" | "ask";
 
-type Composer =
-  | { phase: "closed" }
-  | {
-      phase: "edit";
-      proposalId: string;
-      action: ReviewAction;
-      reason: string;
-      problem: string | null;
-    }
-  | { phase: "sending"; proposalId: string; action: ReviewAction; reason: string };
+type Deck = "front" | "back" | "rest" | "out";
 
 interface InboxRow {
   proposal: Proposal;
   phase: "in" | "out";
+  leave?: ReviewAction;
 }
 
 type HealthState =
@@ -76,16 +68,10 @@ type ToastState = { text: string; visible: boolean };
 const API_BASE_KEY = "personal-os-api-base";
 const TOKEN_KEY = "personal-os-access-token";
 const TOAST_MS = 3200;
-const REASON_HINT = "Enter で確定 ・ Esc で取り消し";
-const EMPTY_REASON = "理由を入力してください。";
+const SWIPE_PX = 108;
 const PENDING_IDS: readonly string[] = ["nav-pending-count", "inbox-count"];
 
 const ACTION_LABELS: Record<ReviewAction, string> = { approve: "承認", reject: "却下" };
-
-const REASON_PLACEHOLDERS: Record<ReviewAction, string> = {
-  approve: "例：本人の発言と一致している",
-  reject: "例：根拠と内容が食い違っている",
-};
 
 const NAV: readonly { id: ViewId; label: string }[] = [
   { id: "review", label: "レビュー" },
@@ -95,12 +81,7 @@ const NAV: readonly { id: ViewId; label: string }[] = [
   { id: "ask", label: "質問" },
 ];
 
-const PRIVACY_OPTIONS: readonly { value: string; label: string; checked: boolean }[] = [
-  { value: "P0", label: "P0 公開", checked: true },
-  { value: "P1", label: "P1 個人", checked: true },
-  { value: "P2", label: "P2 機微", checked: false },
-  { value: "P3", label: "P3 厳格", checked: false },
-];
+const SEARCH_PRIVACY = ["P0", "P1", "P2", "P3"] as const;
 
 const ASK_KINDS: readonly { value: string; label: string }[] = [
   { value: "preference", label: "好み" },
@@ -175,6 +156,19 @@ function cardElement(id: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`.inbox-card[data-proposal-id="${CSS.escape(id)}"]`);
 }
 
+function frontCardId(): string | null {
+  return document.querySelector<HTMLElement>(".inbox-card.deck-front")?.dataset.proposalId ?? null;
+}
+
+function deckFor(row: InboxRow, rows: readonly InboxRow[]): Deck {
+  if (row.phase === "out") return "out";
+  const pending = rows.filter((item) => item.phase === "in");
+  const place = pending.findIndex((item) => item.proposal.id === row.proposal.id);
+  if (place === 0) return "front";
+  if (place === 1) return "back";
+  return "rest";
+}
+
 function focusCard(card: HTMLElement): void {
   card.focus();
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -201,10 +195,10 @@ function viewClass(active: boolean): string {
   return active ? "view" : "view hidden";
 }
 
-function cardClass(rejecting: boolean, leaving: boolean): string {
-  const names = ["card", "inbox-card"];
-  if (rejecting) names.push("composing--reject");
-  if (leaving) names.push("leaving");
+function cardClass(deck: Deck, dragging: boolean): string {
+  const names = ["card", "inbox-card", `deck-${deck}`];
+  if (deck === "out") names.push("leaving");
+  if (dragging) names.push("dragging");
   return names.join(" ");
 }
 
@@ -257,13 +251,7 @@ function NavIcon({ view }: { view: ViewId }) {
 function OfflineNotice({ onReconnect }: { onReconnect: () => void }) {
   return (
     <section id="offline-notice" className="offline-notice" role="alert">
-      <div>
-        <strong>オフラインです</strong>
-        <p>
-          保存済みの画面を表示しています。API サーバー（ローカルでは{" "}
-          <code>pnpm personal:serve</code>）を起動してから再接続してください。
-        </p>
-      </div>
+      <strong>オフラインです</strong>
       <Button type="button" size="sm" data-reconnect="" onClick={onReconnect}>
         再接続
       </Button>
@@ -337,8 +325,6 @@ function MainNav({
   );
 }
 
-const sidebarField = "border-[#343a32] bg-[#1a1d18] text-white placeholder:text-[#858d83]";
-
 function ConnectionForm({
   session,
   onSubmit,
@@ -363,7 +349,6 @@ function ConnectionForm({
           type="url"
           placeholder="同一オリジン"
           defaultValue={session.apiBase}
-          className={sidebarField}
         />
         <label htmlFor="access-token">アクセストークン</label>
         <Input
@@ -373,9 +358,7 @@ function ConnectionForm({
           autoComplete="off"
           placeholder="トークン"
           defaultValue={session.accessToken}
-          className={sidebarField}
         />
-        <p>トークンはこのタブを閉じると破棄されます。</p>
         <Button type="submit" className="w-full">
           接続を更新
         </Button>
@@ -384,116 +367,38 @@ function ConnectionForm({
   );
 }
 
-function InboxEmpty({ loaded }: { loaded: boolean }) {
-  if (!loaded) {
-    return (
-      <div className="empty-state">
-        <div>
-          <span className="empty-state-icon">
-            <IconPlug size={22} stroke={1.75} aria-hidden="true" />
-          </span>
-          <h3>API に接続してください</h3>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="empty-state inbox-empty">
-      <div>
-        <span className="empty-state-icon">
-          <IconCircleCheck size={22} stroke={1.75} aria-hidden="true" />
-        </span>
-        <h3>すべて確認済みです</h3>
-        <code className="empty-command">pnpm personal evidence import {"<file>"}</code>
-      </div>
-    </div>
-  );
-}
-
-function ReasonForm({
-  action,
-  reason,
-  problem,
-  busy,
-  onReason,
-  onSubmit,
-  onCancel,
-}: {
-  action: ReviewAction;
-  reason: string;
-  problem: string | null;
-  busy: boolean;
-  onReason: (reason: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onCancel: () => void;
-}) {
-  const label = ACTION_LABELS[action];
-  return (
-    <form className="reason-form" data-action={action} noValidate onSubmit={onSubmit}>
-      <label htmlFor="reason-input">{label}する理由</label>
-      <div className="reason-row">
-        <Input
-          id="reason-input"
-          name="reason"
-          autoComplete="off"
-          placeholder={REASON_PLACEHOLDERS[action]}
-          aria-describedby="reason-hint"
-          value={reason}
-          disabled={busy}
-          onChange={(event) => onReason(event.target.value)}
-          {...(problem === EMPTY_REASON ? { "aria-invalid": true } : {})}
-        />
-        <Button
-          type="submit"
-          variant={action === "approve" ? "default" : "destructive"}
-          disabled={busy}
-        >
-          {label}を確定
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          data-cancel-review=""
-          disabled={busy}
-          onClick={onCancel}
-        >
-          キャンセル
-        </Button>
-      </div>
-      <p id="reason-hint" className={problem === null ? "reason-hint" : "reason-hint error"}>
-        {problem ?? REASON_HINT}
-      </p>
-    </form>
-  );
-}
-
 function ProposalCard({
   row,
   index,
-  composer,
-  onCompose,
-  onCancel,
-  onSubmit,
-  onReason,
+  deck,
+  busy,
+  onReview,
   onLeft,
 }: {
   row: InboxRow;
   index: number;
-  composer: Composer;
-  onCompose: (proposalId: string, action: ReviewAction) => void;
-  onCancel: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onReason: (reason: string) => void;
+  deck: Deck;
+  busy: boolean;
+  onReview: (proposalId: string, action: ReviewAction, draft: string) => Promise<boolean>;
   onLeft: (proposalId: string) => void;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const drag = useRef<{ x: number; y: number; pointerId: number; active: boolean } | null>(null);
+  const offsetRef = useRef(0);
   const [lockedHeight, setLockedHeight] = useState<number | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [draft, setDraft] = useState(row.proposal.assertion.object);
   const onLeftRef = useRef(onLeft);
+  const onReviewRef = useRef(onReview);
   onLeftRef.current = onLeft;
+  onReviewRef.current = onReview;
   const proposal = row.proposal;
-  const open = composer.phase !== "closed" && composer.proposalId === proposal.id ? composer : null;
-  const busy = open?.phase === "sending";
-  const rejecting = open !== null && open.action === "reject";
+
+  function moveTo(value: number): void {
+    offsetRef.current = value;
+    setOffset(value);
+  }
 
   useLayoutEffect(() => {
     ref.current?.style.setProperty("--i", String(index));
@@ -521,23 +426,120 @@ function ProposalCard({
     };
   }, [row.phase, lockedHeight, proposal.id]);
 
+  function decide(action: ReviewAction): void {
+    if (busy || row.phase !== "in") return;
+    const mobile = window.matchMedia("(max-width: 900px)").matches;
+    if (action === "approve" && draft.trim().length === 0) {
+      setDragging(false);
+      moveTo(0);
+      void onReviewRef.current(proposal.id, action, draft);
+      return;
+    }
+    if (!mobile) {
+      void onReviewRef.current(proposal.id, action, draft);
+      return;
+    }
+    setDragging(false);
+    moveTo(action === "approve" ? window.innerWidth : -window.innerWidth);
+    void onReviewRef.current(proposal.id, action, draft).then((ok) => {
+      if (!ok) moveTo(0);
+    });
+  }
+
+  function onPointerDown(event: ReactPointerEvent<HTMLElement>): void {
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+    if (deck !== "front" || busy || event.button !== 0) return;
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest("button, textarea, input, a") !== null) return;
+    drag.current = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+      active: false,
+    };
+  }
+
+  function onPointerMove(event: ReactPointerEvent<HTMLElement>): void {
+    const current = drag.current;
+    if (current === null || current.pointerId !== event.pointerId) return;
+    const dx = event.clientX - current.x;
+    const dy = event.clientY - current.y;
+    if (!current.active) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      if (Math.abs(dy) > Math.abs(dx)) {
+        drag.current = null;
+        return;
+      }
+      current.active = true;
+      setDragging(true);
+    }
+    offsetRef.current = dx;
+    setOffset(dx);
+    const native = event.nativeEvent;
+    if (
+      current.active &&
+      native instanceof PointerEvent &&
+      native.isTrusted &&
+      !event.currentTarget.hasPointerCapture(native.pointerId)
+    ) {
+      try {
+        event.currentTarget.setPointerCapture(native.pointerId);
+      } catch {
+        // The pointer is no longer active.
+      }
+    }
+  }
+
+  function onPointerEnd(event: ReactPointerEvent<HTMLElement>): void {
+    const current = drag.current;
+    if (current === null || current.pointerId !== event.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+    if (!current.active) return;
+    const dx = offsetRef.current;
+    if (dx >= SWIPE_PX) decide("approve");
+    else if (dx <= -SWIPE_PX) decide("reject");
+    else moveTo(0);
+  }
+
+  const tilt = Math.max(-12, Math.min(12, offset / 18));
+  const moving = row.phase === "in" && offset !== 0;
+
   return (
     <article
       ref={ref}
-      className={cardClass(rejecting, lockedHeight !== null)}
-      style={lockedHeight === null ? undefined : { height: lockedHeight }}
+      className={cardClass(deck, dragging)}
+      style={{
+        ...(lockedHeight === null ? {} : { height: lockedHeight }),
+        ...(moving ? { transform: `translateX(${offset}px) rotate(${tilt}deg)` } : {}),
+      }}
       tabIndex={0}
       data-proposal-id={proposal.id}
+      data-leave={row.leave}
       aria-labelledby={`proposal-title-${proposal.id}`}
-      aria-describedby="review-shortcuts"
       {...(busy ? { "aria-busy": true } : {})}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
     >
+      <span className={offset > 24 ? "swipe-stamp approve show" : "swipe-stamp approve"}>承認</span>
+      <span className={offset < -24 ? "swipe-stamp reject show" : "swipe-stamp reject"}>却下</span>
       <div>
         <p className="card-tags">
           <Badge variant="outline">{proposal.assertion.kind}</Badge>
           <Badge variant="outline">{proposal.assertion.privacy}</Badge>
         </p>
-        <h3 id={`proposal-title-${proposal.id}`}>{proposal.assertion.object}</h3>
+        <label id={`proposal-title-${proposal.id}`} className="card-edit-label">
+          <textarea
+            className="card-edit"
+            rows={3}
+            value={draft}
+            aria-label="内容"
+            disabled={busy || row.phase !== "in"}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </label>
         <p className="meta">
           根拠 {proposal.assertion.evidenceIds.length} 件 ・ {formatWhen(proposal.createdAt)}
         </p>
@@ -547,31 +549,22 @@ function ProposalCard({
           type="button"
           size="sm"
           data-compose="approve"
-          onClick={() => onCompose(proposal.id, "approve")}
+          disabled={busy || row.phase !== "in"}
+          onClick={() => decide("approve")}
         >
           承認<kbd>A</kbd>
         </Button>
         <Button
           type="button"
           size="sm"
-          variant="reject"
+          variant="outline"
           data-compose="reject"
-          onClick={() => onCompose(proposal.id, "reject")}
+          disabled={busy || row.phase !== "in"}
+          onClick={() => decide("reject")}
         >
           却下<kbd>R</kbd>
         </Button>
       </div>
-      {open === null ? null : (
-        <ReasonForm
-          action={open.action}
-          reason={open.reason}
-          problem={open.phase === "edit" ? open.problem : null}
-          busy={open.phase === "sending"}
-          onReason={onReason}
-          onSubmit={onSubmit}
-          onCancel={onCancel}
-        />
-      )}
     </article>
   );
 }
@@ -602,16 +595,7 @@ function DecisionCard({ decision }: { decision: Decision }) {
 function SearchResultsList({ search }: { search: SearchState }) {
   if (search.phase !== "ready") return null;
   const { assertions, decisions } = search.results;
-  if (assertions.length === 0 && decisions.length === 0) {
-    return (
-      <div className="empty-state">
-        <div>
-          <h3>根拠のある記憶が見つかりませんでした</h3>
-          <p>検索語またはプライバシークラスを変えて、もう一度お試しください。</p>
-        </div>
-      </div>
-    );
-  }
+  if (assertions.length === 0 && decisions.length === 0) return null;
   return (
     <>
       {assertions.map((assertion) => (
@@ -625,30 +609,7 @@ function SearchResultsList({ search }: { search: SearchState }) {
 }
 
 function TimelineList({ timeline }: { timeline: TimelineState }) {
-  if (timeline.phase === "idle") {
-    return (
-      <li>
-        <div>
-          <strong>接続待ち</strong>
-        </div>
-        <div>
-          <p className="meta">API 接続後に監査イベントを読み込みます。</p>
-        </div>
-      </li>
-    );
-  }
-  if (timeline.entries.length === 0) {
-    return (
-      <li>
-        <div>
-          <strong>履歴はまだありません</strong>
-        </div>
-        <div>
-          <p className="meta">最初の Evidence を取り込むと、監査イベントが表示されます。</p>
-        </div>
-      </li>
-    );
-  }
+  if (timeline.phase === "idle" || timeline.entries.length === 0) return null;
   return timeline.entries.map((entry, index) => (
     <li key={`${entry.occurredAt}-${entry.entityId}-${index}`}>
       <div>
@@ -667,26 +628,16 @@ function TimelineList({ timeline }: { timeline: TimelineState }) {
 }
 
 function StatePanels({ memory }: { memory: MemoryState }) {
-  if (memory.phase === "idle") {
-    return (
-      <section className="state-group">
-        <p className="meta">API 接続後に現在の状態を読み込みます。</p>
-      </section>
-    );
-  }
+  if (memory.phase === "idle") return null;
   return stateGroups(memory.state).map((group) => (
     <section className="state-group" key={group.kind}>
       <h3>
         {group.kind.replaceAll("_", " ")} <span className="meta">{group.assertions.length}</span>
       </h3>
       <div className="stack">
-        {group.assertions.length === 0 ? (
-          <p className="meta">有効な項目はありません。</p>
-        ) : (
-          group.assertions.map((assertion) => (
-            <AssertionCard key={assertion.id} assertion={assertion} />
-          ))
-        )}
+        {group.assertions.map((assertion) => (
+          <AssertionCard key={assertion.id} assertion={assertion} />
+        ))}
       </div>
     </section>
   ));
@@ -748,23 +699,19 @@ export function Console() {
   const [search, setSearch] = useState<SearchState>({ phase: "idle" });
   const [askedKinds, setAskedKinds] = useState<readonly string[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [composer, setComposer] = useState<Composer>({ phase: "closed" });
   const [toast, setToast] = useState<ToastState | null>(null);
-  const focusReason = useRef(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const submitting = useRef(false);
   const answering = useRef(false);
   const askRequest = useRef(0);
   const rowsRef = useRef(rows);
   const viewRef = useRef(view);
-  const composerRef = useRef(composer);
   const previousPending = useRef<string | null>(null);
-  const openComposerRef = useRef<(proposalId: string, action: ReviewAction) => void>(
-    () => undefined,
-  );
-  const closeComposerRef = useRef<() => void>(() => undefined);
+  const reviewRef = useRef<(proposalId: string, action: ReviewAction) => void>(() => undefined);
   rowsRef.current = rows;
   viewRef.current = view;
-  composerRef.current = composer;
 
   const pendingText = inboxLoaded ? String(rows.filter((row) => row.phase === "in").length) : "—";
   const timelineText = timeline.phase === "ready" ? String(timeline.entries.length) : "—";
@@ -794,7 +741,7 @@ export function Console() {
       );
       setInboxLoaded(true);
       setRows(proposals.map((proposal) => ({ proposal, phase: "in" })));
-      setComposer({ phase: "closed" });
+      setSendingId(null);
     } catch (error: unknown) {
       showToast(errorMessage(error));
     }
@@ -824,22 +771,7 @@ export function Console() {
     }
   }
 
-  function openComposer(proposalId: string, action: ReviewAction): void {
-    const row = rowsRef.current.find((item) => item.proposal.id === proposalId);
-    if (row === undefined || row.phase !== "in") return;
-    focusReason.current = true;
-    setComposer({ phase: "edit", proposalId, action, reason: "", problem: null });
-  }
-
-  function closeComposer(): void {
-    const current = composerRef.current;
-    if (current.phase === "closed") return;
-    const card = cardElement(current.proposalId);
-    setComposer({ phase: "closed" });
-    if (card !== null) focusCard(card);
-  }
-
-  function dismiss(id: string): void {
+  function dismiss(id: string, action: ReviewAction): void {
     const current = rowsRef.current;
     if (!current.some((row) => row.proposal.id === id && row.phase === "in")) return;
     const ids = current.filter((row) => row.phase === "in").map((row) => row.proposal.id);
@@ -849,7 +781,7 @@ export function Console() {
       if (next !== null) focusCard(next);
     }
     const nextRows = current.map((row): InboxRow =>
-      row.proposal.id === id ? { proposal: row.proposal, phase: "out" } : row,
+      row.proposal.id === id ? { proposal: row.proposal, phase: "out", leave: action } : row,
     );
     rowsRef.current = nextRows;
     setRows(nextRows);
@@ -859,65 +791,48 @@ export function Console() {
     const next = rowsRef.current.filter((row) => row.proposal.id !== id);
     rowsRef.current = next;
     setRows(next);
-    setComposer((current) =>
-      current.phase !== "closed" && current.proposalId === id ? { phase: "closed" } : current,
-    );
+    setSendingId((current) => (current === id ? null : current));
     if (next.length === 0) document.querySelector<HTMLElement>("#review-title")?.focus();
   }
 
-  function onReason(reason: string): void {
-    setComposer((current) => {
-      if (current.phase !== "edit") return current;
-      if (current.problem !== EMPTY_REASON) return { ...current, reason };
-      return { ...current, reason, problem: null };
-    });
-  }
-
-  async function submitReview(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (submitting.current) return;
-    const current = composerRef.current;
-    if (current.phase !== "edit") return;
-    const reason = current.reason.trim();
-    if (reason.length === 0) {
-      setComposer({ ...current, problem: EMPTY_REASON });
-      document.querySelector<HTMLInputElement>("#reason-input")?.focus();
-      return;
+  async function review(
+    proposalId: string,
+    action: ReviewAction,
+    draft: string,
+    instant: boolean,
+  ): Promise<boolean> {
+    if (submitting.current) return false;
+    const row = rowsRef.current.find((item) => item.proposal.id === proposalId);
+    if (row === undefined || row.phase !== "in") return false;
+    const edited = draft.trim();
+    if (action === "approve" && edited.length === 0) {
+      showToast("内容を入力してください。");
+      return false;
     }
+    const editedObject =
+      action === "approve" && edited !== row.proposal.assertion.object ? edited : undefined;
     submitting.current = true;
-    setComposer({
-      phase: "sending",
-      proposalId: current.proposalId,
-      action: current.action,
-      reason: current.reason,
-    });
+    setSendingId(proposalId);
     try {
-      await requestJson(
-        session,
-        `/v1/proposals/${encodeURIComponent(current.proposalId)}/${current.action}`,
-        { actor: "web-owner", reason },
-      );
+      await requestJson(session, `/v1/proposals/${encodeURIComponent(proposalId)}/${action}`, {
+        actor: "web-owner",
+        reason: editedObject === undefined ? ACTION_LABELS[action] : "修正して承認",
+        ...(editedObject === undefined ? {} : { editedObject }),
+      });
     } catch (error: unknown) {
       submitting.current = false;
-      const message = errorMessage(error);
-      setComposer((latest) => {
-        if (latest.phase !== "sending" || latest.proposalId !== current.proposalId) return latest;
-        return {
-          phase: "edit",
-          proposalId: current.proposalId,
-          action: current.action,
-          reason: current.reason,
-          problem: message,
-        };
-      });
-      document.querySelector<HTMLInputElement>("#reason-input")?.focus();
-      return;
+      setSendingId(null);
+      showToast(errorMessage(error));
+      return false;
     }
-    showToast(`提案を${ACTION_LABELS[current.action]}しました。`);
+    showToast(`提案を${ACTION_LABELS[action]}しました。`);
     void reloadTimeline(session, false);
     void reloadMemory(session, false);
-    dismiss(current.proposalId);
+    if (instant) dropRow(proposalId);
+    else dismiss(proposalId, action);
     submitting.current = false;
+    setSendingId(null);
+    return true;
   }
 
   function reconnect(current: Session): void {
@@ -929,6 +844,7 @@ export function Console() {
 
   function selectView(next: ViewId): void {
     setView(next);
+    setMenuOpen(false);
     if (next === "timeline") void reloadTimeline(session, true);
     if (next === "state") void reloadMemory(session, true);
   }
@@ -1021,21 +937,25 @@ export function Console() {
     const data = new FormData(event.currentTarget);
     const queryValue = data.get("query");
     const query = typeof queryValue === "string" ? queryValue : "";
-    const privacy = data
-      .getAll("privacy")
-      .filter((value): value is string => typeof value === "string");
     try {
       setSearch({
         phase: "ready",
-        results: searchResponse(await requestJson(session, "/v1/search", { query, privacy })),
+        results: searchResponse(
+          await requestJson(session, "/v1/search", { query, privacy: SEARCH_PRIVACY }),
+        ),
       });
     } catch (error: unknown) {
       showToast(errorMessage(error));
     }
   }
 
-  openComposerRef.current = openComposer;
-  closeComposerRef.current = closeComposer;
+  reviewRef.current = (proposalId, action) => {
+    const card = cardElement(proposalId);
+    const field = card?.querySelector("textarea");
+    const draft = field instanceof HTMLTextAreaElement ? field.value : "";
+    const instant = window.matchMedia("(max-width: 900px)").matches;
+    void review(proposalId, action, draft, instant);
+  };
 
   useEffect(() => {
     reconnect(loadSession());
@@ -1065,37 +985,25 @@ export function Console() {
     pulsePending();
   }, [pendingText]);
 
-  useLayoutEffect(() => {
-    if (!focusReason.current) return;
-    focusReason.current = false;
-    document.querySelector<HTMLInputElement>("#reason-input")?.focus();
-  });
-
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       const focus = inboxFocus({
         key: event.key,
-        inReasonForm: target.closest(".reason-form") !== null,
+        inReasonForm: false,
         typing: target.closest("input, textarea, select, [contenteditable]") !== null,
       });
-      if (focus === "dismiss") {
-        event.preventDefault();
-        closeComposerRef.current();
-        return;
-      }
       if (focus === "ignore") return;
       if (viewRef.current !== "review") return;
       const command = inboxCommand(event);
       if (command === null) return;
       const card = target.closest<HTMLElement>(".inbox-card");
       if (command.type === "compose") {
-        if (card === null) return;
-        const proposalId = card.dataset.proposalId;
-        if (proposalId === undefined) return;
+        const proposalId = card?.dataset.proposalId ?? frontCardId();
+        if (proposalId === null) return;
         event.preventDefault();
-        openComposerRef.current(proposalId, command.action);
+        reviewRef.current(proposalId, command.action);
         return;
       }
       const main = document.querySelector("#main");
@@ -1114,13 +1022,44 @@ export function Console() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (sidebar === null) return undefined;
+    const query = window.matchMedia("(max-width: 900px)");
+    const sync = (): void => {
+      sidebar.inert = query.matches && !menuOpen;
+    };
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
+
   return (
     <>
       <a className="skip-link" href="#main">
         本文へ移動
       </a>
       <div className="app-shell">
-        <aside className="sidebar">
+        {menuOpen ? (
+          <button
+            type="button"
+            className="menu-backdrop"
+            aria-label="メニューを閉じる"
+            onClick={() => setMenuOpen(false)}
+          />
+        ) : null}
+        <aside id="sidebar" ref={sidebarRef} className={menuOpen ? "sidebar open" : "sidebar"}>
           <Brand />
           <MainNav view={view} pendingText={pendingText} onSelect={selectView} />
           <div className="sidebar-bottom">
@@ -1130,7 +1069,25 @@ export function Console() {
         </aside>
         <main id="main" className="main-content" tabIndex={-1}>
           <header className="topbar">
-            <h1>Personal OS</h1>
+            <div className="topbar-start">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="menu-button"
+                aria-expanded={menuOpen}
+                aria-controls="sidebar"
+                aria-label={menuOpen ? "メニューを閉じる" : "メニュー"}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                {menuOpen ? (
+                  <IconX size={18} stroke={1.75} />
+                ) : (
+                  <IconMenu2 size={18} stroke={1.75} />
+                )}
+              </Button>
+              <h1>Personal OS</h1>
+            </div>
             <div id="health" className={healthClass(health)} role="status">
               <span className="health-dot" />
               <span>{healthLabel(health)}</span>
@@ -1153,43 +1110,27 @@ export function Console() {
               </h2>
               <RefreshButton target="review" onClick={() => void reloadProposals(session)} />
             </div>
-            <p
-              id="review-shortcuts"
-              className="shortcut-hint"
-              hidden={!rows.some((row) => row.phase === "in")}
-            >
-              <span>
-                <kbd>J</kbd>
-                <kbd>K</kbd> で移動
-              </span>
-              <span>
-                <kbd>A</kbd> で承認
-              </span>
-              <span>
-                <kbd>R</kbd> で却下
-              </span>
-              <span>
-                <kbd>Esc</kbd> で取り消し
-              </span>
-            </p>
             <div id="proposal-list" className="review-list" aria-live="polite">
-              {rows.length === 0 ? (
-                <InboxEmpty loaded={inboxLoaded} />
-              ) : (
-                rows.map((row, index) => (
-                  <ProposalCard
-                    key={row.proposal.id}
-                    row={row}
-                    index={index}
-                    composer={composer}
-                    onCompose={openComposer}
-                    onCancel={closeComposer}
-                    onSubmit={(event) => void submitReview(event)}
-                    onReason={onReason}
-                    onLeft={dropRow}
-                  />
-                ))
-              )}
+              {rows.length === 0
+                ? null
+                : rows.map((row, index) => (
+                    <ProposalCard
+                      key={row.proposal.id}
+                      row={row}
+                      index={index}
+                      deck={deckFor(row, rows)}
+                      busy={sendingId === row.proposal.id}
+                      onReview={(proposalId, action, draft) =>
+                        review(
+                          proposalId,
+                          action,
+                          draft,
+                          window.matchMedia("(max-width: 900px)").matches,
+                        )
+                      }
+                      onLeft={dropRow}
+                    />
+                  ))}
             </div>
           </section>
           <section
@@ -1208,29 +1149,9 @@ export function Console() {
               <label htmlFor="query">質問またはキーワード</label>
               <div className="search-input-wrap">
                 <IconSearch size={16} stroke={1.75} aria-hidden="true" />
-                <Input
-                  id="query"
-                  name="query"
-                  required
-                  placeholder="例：いま優先している研究テーマは？"
-                  className="pl-10"
-                />
+                <Input id="query" name="query" required className="pl-10" />
                 <Button type="submit">検索</Button>
               </div>
-              <fieldset>
-                <legend>検索に含めるプライバシークラス</legend>
-                {PRIVACY_OPTIONS.map((option) => (
-                  <label key={option.value}>
-                    <input
-                      type="checkbox"
-                      name="privacy"
-                      value={option.value}
-                      defaultChecked={option.checked}
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                ))}
-              </fieldset>
             </form>
             <div id="search-results" className="result-list" aria-live="polite">
               <SearchResultsList search={search} />

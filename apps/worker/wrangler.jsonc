@@ -35,7 +35,7 @@
     {
       "binding": "DB",
       "database_name": "personal-os",
-      "database_id": "replace-with-d1-database-id",
+      "database_id": "634c1d94-6e12-407f-a525-e667a7e8b8bb",
       "migrations_dir": "migrations",
     },
   ],

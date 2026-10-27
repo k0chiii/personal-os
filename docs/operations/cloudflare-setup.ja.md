@@ -57,9 +57,10 @@ rtk pnpm --dir apps/worker exec wrangler secret put OPENAI_API_KEY
 
 ```bash
 rtk pnpm --filter @personal-os/web build
-rtk pnpm --filter @personal-os/worker deploy
+rtk pnpm --filter @personal-os/worker run deploy
 ```
 
+pnpm 12 は `deploy` を組み込みコマンドとして扱うので、`run deploy` で Worker のスクリプトを呼びます。
 `apps/web/dist` もWorkerの静的アセットとして配信されます。`wrangler.jsonc` は
 `workers_dev: false` と `preview_urls: false` を指定しているため、デプロイしても `workers.dev`
 URL とプレビューURLは公開されません。Access設定が終わるまで個人データを投入しないでください。
@@ -87,7 +88,7 @@ Web UI はWorkerの静的アセットとしてAPIと同じドメインから配�
 
 ```bash
 rtk pnpm --filter @personal-os/web build
-rtk pnpm --filter @personal-os/worker deploy
+rtk pnpm --filter @personal-os/worker run deploy
 ```
 
 未認証ではAccessのログイン画面が表示され、認証後だけWeb UIとAPIを利用できることを確認します。

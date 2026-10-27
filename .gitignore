@@ -16,5 +16,7 @@ vault/
 .DS_Store
 .vitest/
 .aws-sam/
+.audit/
+.yomiyasu/
 __pycache__/
 *.pyc
