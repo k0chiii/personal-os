@@ -128,6 +128,97 @@ describe("first Vertical Slice", () => {
     expect(await events.readAll()).toHaveLength(4);
   });
 
+  it("finds a Japanese substring inside a longer token and keeps ASCII phrases", async () => {
+    const { application, ids } = await createTestSystem();
+    const imported = await application.importTextEvidence({
+      content: "私の研究テーマは TypeScript です。",
+      sourceType: "plain_text",
+      privacy: "P1",
+      mediaType: "text/plain",
+      actor: "owner",
+      reason: "Import a Japanese preference",
+    });
+    const evidenceIds = [imported.evidence.id];
+    const japanese = await application.approveProposal({
+      proposalId: (
+        await application.proposePreference({
+          subjectId: ids.generate(),
+          object: "私の研究テーマ",
+          evidenceIds,
+          epistemicOrigin: "self_stated",
+          validFrom: Temporal.Instant.from("2026-09-04T00:00:00Z"),
+          privacy: "P1",
+          createdBy: "agent",
+          actor: "archivist",
+          reason: "Extract the research theme",
+        })
+      ).id,
+      actor: "owner",
+      reason: "The Evidence states the theme",
+    });
+    const typed = await application.approveProposal({
+      proposalId: (
+        await application.proposePreference({
+          subjectId: ids.generate(),
+          object: "TypeScript",
+          evidenceIds,
+          epistemicOrigin: "self_stated",
+          validFrom: Temporal.Instant.from("2026-09-04T00:00:00Z"),
+          privacy: "P1",
+          createdBy: "agent",
+          actor: "archivist",
+          reason: "Extract the language preference",
+        })
+      ).id,
+      actor: "owner",
+      reason: "The Evidence names TypeScript",
+    });
+
+    expect(
+      (await application.searchAssertions({ query: "研究" })).map((assertion) => assertion.id),
+    ).toEqual([japanese.id]);
+    expect(
+      (await application.searchAssertions({ query: "研究テーマ" })).map(
+        (assertion) => assertion.id,
+      ),
+    ).toEqual([japanese.id]);
+    expect(
+      (await application.searchAssertions({ query: "研究テ" })).map((assertion) => assertion.id),
+    ).toEqual([japanese.id]);
+    expect(await application.searchAssertions({ query: "テーマ研" })).toEqual([]);
+    expect(
+      (await application.searchAssertions({ query: "TypeScript" })).map(
+        (assertion) => assertion.id,
+      ),
+    ).toEqual([typed.id]);
+    expect(await application.searchAssertions({ query: "Script" })).toEqual([]);
+
+    const decision = await application.recordDecision({
+      subjectId: ids.generate(),
+      problem: "研究テーマをどう進めるか",
+      options: [
+        { id: "local", label: "local-first", rejectedReason: null },
+        { id: "remote", label: "remote notes", rejectedReason: "keep the notes local" },
+      ],
+      chosenOptionId: "local",
+      criteria: [{ name: "place", description: "Keep the work on this machine" }],
+      rationale: "ローカルに残す。",
+      constraints: ["no remote copy"],
+      stateSnapshot: "The local runtime is available.",
+      evidenceIds,
+      decidedAt: Temporal.Instant.from("2026-09-04T00:00:00Z"),
+      privacy: "P1",
+      actor: "owner",
+      reason: "Record the research-theme Decision",
+    });
+    expect((await application.searchDecisions({ query: "研究" })).map((item) => item.id)).toEqual([
+      decision.id,
+    ]);
+    expect(
+      (await application.searchDecisions({ query: "local-first" })).map((item) => item.id),
+    ).toEqual([decision.id]);
+  });
+
   it("does not create a canonical Assertion when the owner rejects a Proposal", async () => {
     const { application, events, ids } = await createTestSystem();
     const imported = await application.importTextEvidence({
