@@ -1,5 +1,17 @@
+import {
+  IconCheckbox,
+  IconChevronRight,
+  IconCircleCheck,
+  IconHistory,
+  IconList,
+  IconMessageQuestion,
+  IconPlug,
+  IconRefresh,
+  IconSearch,
+} from "@tabler/icons-react";
+import type { Icon } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 
 import {
   ApiUnreachableError,
@@ -22,7 +34,11 @@ import {
 } from "./api.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.tsx";
+import { Checkbox } from "./components/ui/checkbox.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { Label } from "./components/ui/label.tsx";
+import { RadioGroup, RadioGroupItem } from "./components/ui/radio-group.tsx";
 import { idAfterRemoval, inboxCommand, inboxFocus, movedId, type ReviewAction } from "./inbox.ts";
 
 type ViewId = "review" | "search" | "timeline" | "state" | "ask";
@@ -111,12 +127,6 @@ function uuidV7(): string {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-function checkedKinds(form: HTMLFormElement): string[] {
-  return new FormData(form)
-    .getAll("kind")
-    .filter((value): value is string => typeof value === "string");
 }
 
 function loadSession(): Session {
@@ -231,64 +241,17 @@ function healthLabel(health: HealthState): string {
   }
 }
 
-function Icon({ children }: { children: ReactNode }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {children}
-    </svg>
-  );
-}
+const NAV_ICONS = {
+  review: IconCheckbox,
+  search: IconSearch,
+  timeline: IconHistory,
+  state: IconList,
+  ask: IconMessageQuestion,
+} as const satisfies Record<ViewId, Icon>;
 
 function NavIcon({ view }: { view: ViewId }) {
-  switch (view) {
-    case "review":
-      return (
-        <Icon>
-          <path d="M9 11l2 2 4-4M5 4h14v16H5z" />
-        </Icon>
-      );
-    case "search":
-      return <SearchIcon />;
-    case "timeline":
-      return (
-        <Icon>
-          <path d="M12 7v5l3 2M4 12a8 8 0 1 0 2.3-5.7L4 8.6V4" />
-        </Icon>
-      );
-    case "state":
-      return (
-        <Icon>
-          <path d="M4 6h16M4 12h10M4 18h13" />
-        </Icon>
-      );
-    case "ask":
-      return (
-        <Icon>
-          <path d="M5 5h14v14H5z" />
-        </Icon>
-      );
-    default: {
-      const unexpected: never = view;
-      throw new Error(String(unexpected));
-    }
-  }
-}
-
-function SearchIcon() {
-  return (
-    <Icon>
-      <circle cx="10.8" cy="10.8" r="6.3" />
-      <path d="m16 16 4 4" />
-    </Icon>
-  );
-}
-
-function RefreshIcon() {
-  return (
-    <Icon>
-      <path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.8-2L20 11M4 13l2.1 4a7 7 0 0 0 11.8-2" />
-    </Icon>
-  );
+  const Glyph = NAV_ICONS[view];
+  return <Glyph size={20} stroke={1.75} aria-hidden="true" />;
 }
 
 function OfflineNotice({ onReconnect }: { onReconnect: () => void }) {
@@ -324,7 +287,7 @@ function RefreshButton({
       data-refresh={target}
       onClick={onClick}
     >
-      <RefreshIcon />
+      <IconRefresh size={16} stroke={1.75} aria-hidden="true" />
       更新
     </Button>
   );
@@ -390,9 +353,7 @@ function ConnectionForm({
         <span>
           <strong>API 設定</strong>
         </span>
-        <Icon>
-          <path d="m9 6 6 6-6 6" />
-        </Icon>
+        <IconChevronRight size={16} stroke={1.75} aria-hidden="true" />
       </summary>
       <form id="connection-form" className="connection-form" onSubmit={onSubmit}>
         <label htmlFor="api-base">API の URL</label>
@@ -429,9 +390,7 @@ function InboxEmpty({ loaded }: { loaded: boolean }) {
       <div className="empty-state">
         <div>
           <span className="empty-state-icon">
-            <Icon>
-              <path d="M5 4h14v16H5zM9 9h6M9 13h4" />
-            </Icon>
+            <IconPlug size={22} stroke={1.75} aria-hidden="true" />
           </span>
           <h3>API に接続してください</h3>
         </div>
@@ -442,10 +401,7 @@ function InboxEmpty({ loaded }: { loaded: boolean }) {
     <div className="empty-state inbox-empty">
       <div>
         <span className="empty-state-icon">
-          <Icon>
-            <path d="m7 12 3 3 7-7" />
-            <circle cx="12" cy="12" r="9" />
-          </Icon>
+          <IconCircleCheck size={22} stroke={1.75} aria-hidden="true" />
         </span>
         <h3>すべて確認済みです</h3>
         <code className="empty-command">pnpm personal evidence import {"<file>"}</code>
@@ -743,28 +699,41 @@ function QuestionForm({
 }: {
   question: Question;
   index: number;
-  onSubmit: (event: FormEvent<HTMLFormElement>, question: Question) => void | Promise<void>;
+  onSubmit: (
+    event: FormEvent<HTMLFormElement>,
+    question: Question,
+    privacy: string,
+  ) => void | Promise<void>;
 }) {
   const answerId = `ask-answer-${index}`;
+  const [privacy, setPrivacy] = useState("P1");
   return (
-    <form className="search-panel result" onSubmit={(event) => void onSubmit(event, question)}>
-      <h3>
-        <label htmlFor={answerId}>{question.prompt}</label>
-      </h3>
-      <div className="search-input-wrap">
-        <Input id={answerId} name="answer" required />
-        <Button type="submit">送る</Button>
-      </div>
-      <fieldset>
-        <legend>区分</legend>
-        {ASK_PRIVACY.map((privacy) => (
-          <label key={privacy}>
-            <input type="radio" name="privacy" value={privacy} defaultChecked={privacy === "P1"} />
-            <span>{privacy}</span>
-          </label>
-        ))}
-      </fieldset>
-    </form>
+    <Card>
+      <form onSubmit={(event) => void onSubmit(event, question, privacy)}>
+        <CardHeader>
+          <CardTitle>
+            <Label htmlFor={answerId}>{question.prompt}</Label>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex gap-2">
+            <Input id={answerId} name="answer" required />
+            <Button type="submit">送る</Button>
+          </div>
+          <RadioGroup value={privacy} onValueChange={setPrivacy}>
+            {ASK_PRIVACY.map((item) => {
+              const itemId = `${answerId}-${item}`;
+              return (
+                <div key={item} className="flex items-center gap-2">
+                  <RadioGroupItem value={item} id={itemId} />
+                  <Label htmlFor={itemId}>{item}</Label>
+                </div>
+              );
+            })}
+          </RadioGroup>
+        </CardContent>
+      </form>
+    </Card>
   );
 }
 
@@ -991,8 +960,10 @@ export function Console() {
     }
   }
 
-  function changeAskedKinds(event: FormEvent<HTMLFormElement>): void {
-    const kinds = checkedKinds(event.currentTarget);
+  function toggleAskedKind(kind: string, checked: boolean): void {
+    const kinds = ASK_KINDS.map((item) => item.value).filter((value) =>
+      value === kind ? checked : askedKinds.includes(value),
+    );
     setAskedKinds(kinds);
     void loadQuestions(session, kinds);
   }
@@ -1000,15 +971,14 @@ export function Console() {
   async function submitAnswer(
     event: FormEvent<HTMLFormElement>,
     question: Question,
+    privacy: string,
   ): Promise<void> {
     event.preventDefault();
     if (answering.current) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const answerValue = data.get("answer");
-    const privacyValue = data.get("privacy");
     const answer = typeof answerValue === "string" ? answerValue : "";
-    const privacy = typeof privacyValue === "string" ? privacyValue : "P1";
     answering.current = true;
     try {
       const evidenceId = createdEvidenceId(
@@ -1237,7 +1207,7 @@ export function Console() {
             >
               <label htmlFor="query">質問またはキーワード</label>
               <div className="search-input-wrap">
-                <SearchIcon />
+                <IconSearch size={16} stroke={1.75} aria-hidden="true" />
                 <Input
                   id="query"
                   name="query"
@@ -1306,22 +1276,26 @@ export function Console() {
             <div className="section-heading">
               <h2 id="ask-title">質問</h2>
             </div>
-            <form
-              id="ask-kinds"
-              className="search-panel"
-              onSubmit={(event) => event.preventDefault()}
-              onChange={(event) => changeAskedKinds(event)}
-            >
-              <fieldset>
-                <legend>種類</legend>
-                {ASK_KINDS.map((kind) => (
-                  <label key={kind.value}>
-                    <input type="checkbox" name="kind" value={kind.value} />
-                    <span>{kind.label}</span>
-                  </label>
-                ))}
-              </fieldset>
-            </form>
+            <Card>
+              <CardHeader>
+                <CardTitle>種類</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                {ASK_KINDS.map((kind) => {
+                  const id = `ask-kind-${kind.value}`;
+                  return (
+                    <div key={kind.value} className="flex items-center gap-2">
+                      <Checkbox
+                        id={id}
+                        checked={askedKinds.includes(kind.value)}
+                        onCheckedChange={(checked) => toggleAskedKind(kind.value, checked === true)}
+                      />
+                      <Label htmlFor={id}>{kind.label}</Label>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
             {questions.length === 0 ? null : (
               <div className="result-list">
                 {questions.map((question, index) => (
