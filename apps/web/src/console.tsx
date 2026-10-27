@@ -4,9 +4,9 @@ import {
   IconHistory,
   IconList,
   IconMenu2,
+  IconMessage,
   IconMessageQuestion,
   IconRefresh,
-  IconSearch,
   IconX,
 } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
@@ -25,13 +25,23 @@ import {
   timelineResponse,
   type Assertion,
   type CurrentState,
-  type Decision,
   type Proposal,
   type Question,
-  type SearchResults,
   type Session,
   type TimelineEntry,
 } from "./api.ts";
+import {
+  emptyTranscript,
+  fail,
+  retry,
+  send,
+  settle,
+  visible,
+  type Handoff,
+  type Transcript,
+  type Turn,
+  type TurnId,
+} from "./dialogue.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.tsx";
@@ -41,7 +51,7 @@ import { Label } from "./components/ui/label.tsx";
 import { RadioGroup, RadioGroupItem } from "./components/ui/radio-group.tsx";
 import { idAfterRemoval, inboxCommand, inboxFocus, movedId, type ReviewAction } from "./inbox.ts";
 
-type ViewId = "review" | "search" | "timeline" | "state" | "ask";
+type ViewId = "review" | "dialogue" | "timeline" | "state" | "ask";
 
 type Deck = "front" | "back" | "rest" | "out";
 
@@ -61,8 +71,6 @@ type TimelineState = { phase: "idle" } | { phase: "ready"; entries: TimelineEntr
 
 type MemoryState = { phase: "idle" } | { phase: "ready"; state: CurrentState };
 
-type SearchState = { phase: "idle" } | { phase: "ready"; results: SearchResults };
-
 type ToastState = { text: string; visible: boolean };
 
 const API_BASE_KEY = "personal-os-api-base";
@@ -75,7 +83,7 @@ const ACTION_LABELS: Record<ReviewAction, string> = { approve: "承認", reject:
 
 const NAV: readonly { id: ViewId; label: string }[] = [
   { id: "review", label: "レビュー" },
-  { id: "search", label: "検索" },
+  { id: "dialogue", label: "対話" },
   { id: "timeline", label: "タイムライン" },
   { id: "state", label: "現在の状態" },
   { id: "ask", label: "質問" },
@@ -237,7 +245,7 @@ function healthLabel(health: HealthState): string {
 
 const NAV_ICONS = {
   review: IconCheckbox,
-  search: IconSearch,
+  dialogue: IconMessage,
   timeline: IconHistory,
   state: IconList,
   ask: IconMessageQuestion,
@@ -582,29 +590,155 @@ function AssertionCard({ assertion }: { assertion: Assertion }) {
   );
 }
 
-function DecisionCard({ decision }: { decision: Decision }) {
+function DialogueScreen({ session, active }: { session: Session; active: boolean }) {
+  const [transcript, setTranscript] = useState<Transcript>(emptyTranscript);
+  const [draft, setDraft] = useState("");
+  // setState updaters run after the handler returns, so the fetch starts from this ref.
+  const transcriptRef = useRef(transcript);
+
+  async function complete(sendingId: TurnId, query: string): Promise<void> {
+    try {
+      const results = searchResponse(
+        await requestJson(session, "/v1/search", { query, privacy: SEARCH_PRIVACY }),
+      );
+      setTranscript((current) => {
+        const next = settle(current, sendingId, results);
+        transcriptRef.current = next;
+        return next;
+      });
+    } catch (error: unknown) {
+      const message = errorMessage(error);
+      setTranscript((current) => {
+        const next = fail(current, sendingId, { message });
+        transcriptRef.current = next;
+        return next;
+      });
+    }
+  }
+
+  function commit(
+    next: (current: Transcript) => Handoff,
+  ): Extract<Turn, { phase: "sending" }> | null {
+    const handoff = next(transcriptRef.current);
+    if (!handoff.accepted) return null;
+    transcriptRef.current = handoff.transcript;
+    setTranscript(handoff.transcript);
+    return handoff.sending;
+  }
+
+  function onSend(text: string): void {
+    const sending = commit((current) => send(current, text));
+    if (sending === null) return;
+    if (draft === text) setDraft("");
+    void complete(sending.id, sending.owner.text);
+  }
+
+  function onRetry(): void {
+    const sending = commit((current) => retry(current));
+    if (sending === null) return;
+    void complete(sending.id, sending.owner.text);
+  }
+
   return (
-    <article className="result">
-      <Badge variant="outline">decision</Badge>
-      <h3>{decision.problem}</h3>
-      <p>{decision.rationale}</p>
-    </article>
+    <DialogueView
+      active={active}
+      transcript={transcript}
+      draft={draft}
+      onDraft={setDraft}
+      onSend={onSend}
+      onRetry={onRetry}
+    />
   );
 }
 
-function SearchResultsList({ search }: { search: SearchState }) {
-  if (search.phase !== "ready") return null;
-  const { assertions, decisions } = search.results;
-  if (assertions.length === 0 && decisions.length === 0) return null;
+function DialogueView({
+  active,
+  transcript,
+  draft,
+  onDraft,
+  onSend,
+  onRetry,
+}: {
+  active: boolean;
+  transcript: Transcript;
+  draft: string;
+  onDraft: (value: string) => void;
+  onSend: (text: string) => void;
+  onRetry: () => void;
+}) {
+  const rows = visible(transcript);
+  const sending = transcript.open.phase === "sending";
+  const logRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!active) return;
+    const log = logRef.current;
+    if (log === null) return;
+    log.scrollTop = log.scrollHeight;
+  }, [active, transcript]);
   return (
-    <>
-      {assertions.map((assertion) => (
-        <AssertionCard key={assertion.id} assertion={assertion} />
-      ))}
-      {decisions.map((decision, index) => (
-        <DecisionCard key={`${decision.problem}-${index}`} decision={decision} />
-      ))}
-    </>
+    <section
+      id="dialogue-view"
+      className={`${viewClass(active)} dialogue`}
+      aria-labelledby="dialogue-title"
+    >
+      <h2 id="dialogue-title">対話</h2>
+      <div
+        ref={logRef}
+        className="dialogue-log"
+        role="log"
+        aria-live="polite"
+        aria-label="対話の記録"
+      >
+        {rows.length === 0 ? <p className="meta">送ると、記憶にある文が返答になります。</p> : null}
+        {rows.map((turn) => (
+          <article key={turn.id}>
+            <p className="dialogue-owner">{turn.owner.text}</p>
+            {turn.phase === "sending" ? <p className="dialogue-system">探しています</p> : null}
+            {turn.phase === "reply"
+              ? turn.system.paragraphs.map((paragraph, index) => (
+                  <p key={index} className="dialogue-system">
+                    {paragraph}
+                  </p>
+                ))
+              : null}
+            {turn.phase === "failed" ? (
+              <div className="dialogue-system">
+                <p>送れませんでした。</p>
+                <p>{turn.failure.message}</p>
+                {transcript.open.phase === "failed" && transcript.open.id === turn.id ? (
+                  <button type="button" onClick={onRetry}>
+                    もう一度送る
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+      <form
+        className="dialogue-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSend(draft);
+        }}
+      >
+        <label htmlFor="dialogue-draft">メッセージ</label>
+        <textarea
+          id="dialogue-draft"
+          value={draft}
+          placeholder="記憶に聞く"
+          onChange={(event) => onDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
+        />
+        <button type="submit" disabled={sending}>
+          送る
+        </button>
+      </form>
+    </section>
   );
 }
 
@@ -691,12 +825,11 @@ function QuestionForm({
 export function Console() {
   const [session, setSession] = useState(loadSession);
   const [health, setHealth] = useState<HealthState>({ phase: "checking" });
-  const [view, setView] = useState<ViewId>("review");
+  const [view, setView] = useState<ViewId>("dialogue");
   const [inboxLoaded, setInboxLoaded] = useState(false);
   const [rows, setRows] = useState<InboxRow[]>([]);
   const [timeline, setTimeline] = useState<TimelineState>({ phase: "idle" });
   const [memory, setMemory] = useState<MemoryState>({ phase: "idle" });
-  const [search, setSearch] = useState<SearchState>({ phase: "idle" });
   const [askedKinds, setAskedKinds] = useState<readonly string[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -932,23 +1065,6 @@ export function Console() {
     }
   }
 
-  async function onSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const queryValue = data.get("query");
-    const query = typeof queryValue === "string" ? queryValue : "";
-    try {
-      setSearch({
-        phase: "ready",
-        results: searchResponse(
-          await requestJson(session, "/v1/search", { query, privacy: SEARCH_PRIVACY }),
-        ),
-      });
-    } catch (error: unknown) {
-      showToast(errorMessage(error));
-    }
-  }
-
   reviewRef.current = (proposalId, action) => {
     const card = cardElement(proposalId);
     const field = card?.querySelector("textarea");
@@ -1050,7 +1166,7 @@ export function Console() {
       <a className="skip-link" href="#main">
         本文へ移動
       </a>
-      <div className="app-shell">
+      <div className={view === "dialogue" ? "app-shell dialogue-open" : "app-shell"}>
         {menuOpen ? (
           <button
             type="button"
@@ -1133,30 +1249,7 @@ export function Console() {
                   ))}
             </div>
           </section>
-          <section
-            id="search-view"
-            className={viewClass(view === "search")}
-            aria-labelledby="search-title"
-          >
-            <div className="section-heading">
-              <h2 id="search-title">記憶を検索</h2>
-            </div>
-            <form
-              id="search-form"
-              className="search-panel"
-              onSubmit={(event) => void onSearch(event)}
-            >
-              <label htmlFor="query">質問またはキーワード</label>
-              <div className="search-input-wrap">
-                <IconSearch size={16} stroke={1.75} aria-hidden="true" />
-                <Input id="query" name="query" required className="pl-10" />
-                <Button type="submit">検索</Button>
-              </div>
-            </form>
-            <div id="search-results" className="result-list" aria-live="polite">
-              <SearchResultsList search={search} />
-            </div>
-          </section>
+          <DialogueScreen session={session} active={view === "dialogue"} />
           <section
             id="timeline-view"
             className={viewClass(view === "timeline")}
