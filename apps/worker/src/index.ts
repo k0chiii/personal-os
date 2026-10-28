@@ -13,7 +13,12 @@ import {
   type VectorizeIndexLike,
 } from "@personal-os/adapters-cloudflare";
 import { OpenAiAdapter } from "@personal-os/adapters-openai";
-import { createApiHandler, type ApiAuthenticator, type ApiRateLimiter } from "@personal-os/api";
+import {
+  createApiHandler,
+  type ApiAuthenticator,
+  type ApiRateLimiter,
+  type ConversationVoice,
+} from "@personal-os/api";
 import { DecisionSimulator, PersonalOsApplication, ProviderRouter } from "@personal-os/application";
 import { HybridAssertionRetriever, LocalHashEmbedding } from "@personal-os/retrieval";
 
@@ -32,7 +37,9 @@ export interface WorkerEnvironment {
   readonly AI?: {
     run(
       model: string,
-      input: { messages: readonly { role: "system" | "user"; content: string }[] },
+      input: {
+        messages: readonly { role: "system" | "user" | "assistant"; content: string }[];
+      },
     ): Promise<unknown>;
   };
 }
@@ -82,6 +89,29 @@ function workersAiWording(ai: NonNullable<WorkerEnvironment["AI"]>): {
         messages: [
           { role: "system", content: QUESTION_REWRITE_SYSTEM },
           { role: "user", content: prompt },
+        ],
+      });
+      return workersAiText(result);
+    },
+  };
+}
+
+const TALK_SYSTEM =
+  "あなたは個人の記憶を持つ対話相手です。日本語で、友達に話すように短く返してください。渡された記憶があれば会話に使い、記憶にない事実は作らないでください。記憶がなくても会話は続けてください。見出しや箇条書きは書かないでください。";
+
+function workersAiVoice(ai: NonNullable<WorkerEnvironment["AI"]>): ConversationVoice {
+  return {
+    async reply({ message, memory, history }) {
+      const remembered =
+        memory.length === 0 ? message : `記憶:\n${memory.join("\n")}\n\n相手:\n${message}`;
+      const result = await ai.run(QUESTION_REWRITE_MODEL, {
+        messages: [
+          { role: "system", content: TALK_SYSTEM },
+          ...history.map((line) => ({
+            role: line.role === "owner" ? ("user" as const) : ("assistant" as const),
+            content: line.text,
+          })),
+          { role: "user", content: remembered },
         ],
       });
       return workersAiText(result);
@@ -141,7 +171,7 @@ export default {
       rateLimiter: new CloudflareNativeRateLimiter(environment.RATE_LIMITER),
       ...(authenticator === undefined ? {} : { authenticator }),
       ...(simulator === undefined ? {} : { simulator }),
-      ...(ai === undefined ? {} : { wording: workersAiWording(ai) }),
+      ...(ai === undefined ? {} : { wording: workersAiWording(ai), voice: workersAiVoice(ai) }),
     })(request);
   },
 };

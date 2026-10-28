@@ -62,7 +62,7 @@ type _SendingIsNotPast = Assert<
 export type StoredTurn = Exclude<Turn, { phase: "idle" }>;
 
 /**
- * `accepted` means `sending` is `open` and the shell should POST /v1/search
+ * `accepted` means `sending` is `open` and the shell should POST /v1/talk
  * with `sending.owner.text`. Refusal keeps the same `transcript` reference.
  */
 export type Handoff =
@@ -113,6 +113,36 @@ export function retry(transcript: Transcript): Handoff {
     owner: transcript.open.owner,
   };
   return { accepted: true, transcript: { past: transcript.past, open: sending }, sending };
+}
+
+const SPOKEN_FALLBACK = "記憶にはまだない話だね。続きを聞かせて。";
+
+/** One spoken paragraph. A blank reply keeps the turn answerable. */
+export function say(transcript: Transcript, id: TurnId, text: string): Transcript {
+  if (transcript.open.phase !== "sending" || transcript.open.id !== id) return transcript;
+  const paragraph = text.trim();
+  const reply = {
+    phase: "reply" as const,
+    id: transcript.open.id,
+    owner: transcript.open.owner,
+    system: {
+      paragraphs: [paragraph.length > 0 ? paragraph : SPOKEN_FALLBACK] as const,
+    },
+  };
+  return { past: [...transcript.past, reply], open: { phase: "idle" } };
+}
+
+/** Sealed replies only. The open send is the request body, not history. */
+export function historyOf(
+  transcript: Transcript,
+): readonly { readonly role: "owner" | "system"; readonly text: string }[] {
+  const lines: { role: "owner" | "system"; text: string }[] = [];
+  for (const turn of transcript.past) {
+    if (turn.phase !== "reply") continue;
+    lines.push({ role: "owner", text: turn.owner.text });
+    lines.push({ role: "system", text: turn.system.paragraphs.join("\n") });
+  }
+  return lines.slice(-12);
 }
 
 /**

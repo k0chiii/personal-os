@@ -222,6 +222,13 @@ export function createdEvidenceId(value: unknown): string {
   return stringField(value.evidence, "id");
 }
 
+export function talkResponse(value: unknown): { readonly reply: string } {
+  if (!isRecord(value) || typeof value.reply !== "string") {
+    throw new Error("API returned an invalid reply.");
+  }
+  return { reply: value.reply };
+}
+
 export function searchResponse(value: unknown): SearchResults {
   if (!isRecord(value) || !Array.isArray(value.assertions) || !Array.isArray(value.decisions)) {
     throw new Error("API returned invalid search results.");

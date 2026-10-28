@@ -4,7 +4,9 @@ import type { SearchResults } from "./api.ts";
 import {
   emptyTranscript,
   fail,
+  historyOf,
   retry,
+  say,
   send,
   settle,
   visible,
@@ -175,11 +177,39 @@ it("moves a failed turn into the past when a new sentence is sent", () => {
   expect(visible(handoff.transcript)).toEqual([sealed, handoff.sending]);
 });
 
+it("speaks one paragraph and keeps a blank reply answerable", () => {
+  const handoff = accept(emptyTranscript(), "おはよう", "id-1");
+  const spoken = say(handoff.transcript, handoff.sending.id, " おはよう。紅茶にする？ ");
+  expect(visible(spoken)).toEqual([
+    {
+      phase: "reply",
+      id: "id-1",
+      owner: { text: "おはよう" },
+      system: { paragraphs: ["おはよう。紅茶にする？"] },
+    },
+  ]);
+  expect(historyOf(spoken)).toEqual([
+    { role: "owner", text: "おはよう" },
+    { role: "system", text: "おはよう。紅茶にする？" },
+  ]);
+  expect(historyOf(handoff.transcript)).toEqual([]);
+  const blank = say(handoff.transcript, handoff.sending.id, "  ");
+  expect(visible(blank)).toEqual([
+    {
+      phase: "reply",
+      id: "id-1",
+      owner: { text: "おはよう" },
+      system: { paragraphs: ["記憶にはまだない話だね。続きを聞かせて。"] },
+    },
+  ]);
+});
+
 it("ignores a settle or fail once the open turn is no longer that send", () => {
   const current = accept(emptyTranscript(), "今", "id-now");
   const other = accept(emptyTranscript(), "別", "id-other");
   const hits = results(["hit"], []);
   expect(settle(current.transcript, other.sending.id, hits)).toBe(current.transcript);
+  expect(say(current.transcript, other.sending.id, "遅い")).toBe(current.transcript);
   expect(fail(current.transcript, other.sending.id, { message: "late" })).toBe(current.transcript);
 
   const settled = settle(current.transcript, current.sending.id, hits);

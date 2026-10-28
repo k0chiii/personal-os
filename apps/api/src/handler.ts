@@ -29,12 +29,26 @@ import {
 } from "@personal-os/ports";
 import { Temporal } from "temporal-polyfill";
 
+export interface TalkLine {
+  readonly role: "owner" | "system";
+  readonly text: string;
+}
+
+export interface ConversationVoice {
+  reply(input: {
+    readonly message: string;
+    readonly memory: readonly string[];
+    readonly history: readonly TalkLine[];
+  }): Promise<string>;
+}
+
 export interface ApiDependencies {
   readonly application: PersonalOsApplication;
   readonly simulator?: DecisionSimulator;
   readonly rateLimiter?: ApiRateLimiter;
   readonly authenticator?: ApiAuthenticator;
   readonly wording?: QuestionWording;
+  readonly voice?: ConversationVoice;
 }
 
 export interface ApiPrincipal {
@@ -239,6 +253,29 @@ export function createApiHandler(
           }),
         ]);
         return json({ assertions, decisions });
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/talk") {
+        const body = recordBody(await request.json());
+        const query = stringField(body, "query").trim();
+        const privacy = privacyField(body, "privacy");
+        const at = optionalStringField(body, "at");
+        const history = talkHistory(body);
+        const [assertions, decisions] = await Promise.all([
+          dependencies.application.searchAssertions({
+            query,
+            privacy,
+            ...(at === null ? {} : { asOf: Temporal.Instant.from(at) }),
+          }),
+          dependencies.application.searchDecisions({
+            query,
+            privacy,
+            ...(at === null ? {} : { asOf: Temporal.Instant.from(at) }),
+          }),
+        ]);
+        const memory = rememberedLines(assertions, decisions);
+        const reply = await spokenReply(dependencies.voice, { message: query, memory, history });
+        return json({ reply });
       }
 
       if (request.method === "POST" && url.pathname === "/v1/context") {
@@ -538,6 +575,67 @@ function errorResponse(error: unknown): Response {
   }
   const message = error instanceof Error ? error.message : "Unknown server error.";
   return problem(500, "internal_error", message);
+}
+
+const TALK_FALLBACK = "記憶にはまだない話だね。続きを聞かせて。";
+const TALK_HISTORY_LIMIT = 12;
+
+function rememberedLines(
+  assertions: readonly { readonly object: string }[],
+  decisions: readonly { readonly problem: string; readonly rationale: string }[],
+): string[] {
+  const lines: string[] = [];
+  for (const assertion of assertions) {
+    const object = assertion.object.trim();
+    if (object.length > 0) lines.push(object);
+  }
+  for (const decision of decisions) {
+    const stated = decision.problem.trim();
+    if (stated.length > 0) lines.push(stated);
+    const rationale = decision.rationale.trim();
+    if (rationale.length > 0) lines.push(rationale);
+  }
+  return lines;
+}
+
+function talkHistory(body: Record<string, unknown>): TalkLine[] {
+  const value = body.history;
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new TypeError("history must be an array.");
+  const lines: TalkLine[] = [];
+  for (const item of value.slice(-TALK_HISTORY_LIMIT)) {
+    if (!isRecord(item)) throw new TypeError("history contains a non-object value.");
+    const role = item.role;
+    const text = item.text;
+    if (role !== "owner" && role !== "system") {
+      throw new TypeError("history role must be owner or system.");
+    }
+    if (typeof text !== "string" || text.trim().length === 0) {
+      throw new TypeError("history text must be a non-empty string.");
+    }
+    lines.push({ role, text: text.trim() });
+  }
+  return lines;
+}
+
+async function spokenReply(
+  voice: ConversationVoice | undefined,
+  input: {
+    readonly message: string;
+    readonly memory: readonly string[];
+    readonly history: readonly TalkLine[];
+  },
+): Promise<string> {
+  if (voice !== undefined) {
+    try {
+      const spoken = (await voice.reply(input)).trim();
+      if (spoken.length > 0) return spoken;
+    } catch {
+      // An empty or failed model still leaves a sentence the owner can answer.
+    }
+  }
+  if (input.memory.length > 0) return input.memory.join("\n");
+  return TALK_FALLBACK;
 }
 
 function json(value: unknown, status = 200): Response {
