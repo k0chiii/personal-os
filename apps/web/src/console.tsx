@@ -21,7 +21,7 @@ import {
   proposalsResponse,
   questionsResponse,
   requestJson,
-  searchResponse,
+  talkResponse,
   timelineResponse,
   type Assertion,
   type CurrentState,
@@ -33,9 +33,10 @@ import {
 import {
   emptyTranscript,
   fail,
+  historyOf,
   retry,
+  say,
   send,
-  settle,
   visible,
   type Handoff,
   type Transcript,
@@ -598,11 +599,15 @@ function DialogueScreen({ session, active }: { session: Session; active: boolean
 
   async function complete(sendingId: TurnId, query: string): Promise<void> {
     try {
-      const results = searchResponse(
-        await requestJson(session, "/v1/search", { query, privacy: SEARCH_PRIVACY }),
+      const spoken = talkResponse(
+        await requestJson(session, "/v1/talk", {
+          query,
+          privacy: SEARCH_PRIVACY,
+          history: historyOf(transcriptRef.current),
+        }),
       );
       setTranscript((current) => {
-        const next = settle(current, sendingId, results);
+        const next = say(current, sendingId, spoken.reply);
         transcriptRef.current = next;
         return next;
       });
@@ -669,6 +674,13 @@ function DialogueView({
   const rows = visible(transcript);
   const sending = transcript.open.phase === "sending";
   const logRef = useRef<HTMLDivElement>(null);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const field = draftRef.current;
+    if (field === null) return;
+    field.style.height = "2.75rem";
+    field.style.height = `${Math.min(field.scrollHeight, 128)}px`;
+  }, [draft]);
   useLayoutEffect(() => {
     if (!active) return;
     const log = logRef.current;
@@ -689,11 +701,15 @@ function DialogueView({
         aria-live="polite"
         aria-label="対話の記録"
       >
-        {rows.length === 0 ? <p className="meta">送ると、記憶にある文が返答になります。</p> : null}
+        {rows.length === 0 ? (
+          <p className="meta">なんでも話して。記憶にあれば、それを交えて返す。</p>
+        ) : null}
         {rows.map((turn) => (
-          <article key={turn.id}>
+          <article key={turn.id} className="t-rise">
             <p className="dialogue-owner">{turn.owner.text}</p>
-            {turn.phase === "sending" ? <p className="dialogue-status">探しています</p> : null}
+            {turn.phase === "sending" ? (
+              <p className="dialogue-status t-think">考えています</p>
+            ) : null}
             {turn.phase === "reply" ? (
               <div className="dialogue-system">
                 {turn.system.paragraphs.map((paragraph, index) => (
@@ -724,10 +740,11 @@ function DialogueView({
       >
         <label htmlFor="dialogue-draft">メッセージ</label>
         <textarea
+          ref={draftRef}
           id="dialogue-draft"
           rows={1}
           value={draft}
-          placeholder="記憶に聞く"
+          placeholder="話しかける"
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;

@@ -217,4 +217,70 @@ describe("HTTP API", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ code: "invalid_request" });
   });
+
+  it("answers a talk from the voice, and from memory when the voice is absent", async () => {
+    await seedPreference();
+    const voiced = createApiHandler({
+      application,
+      voice: {
+        async reply({ message, memory, history }) {
+          return `${history.map((line) => line.text).join(" ")} 聞いた。${message} ${memory.join(" ")}`.trim();
+        },
+      },
+    });
+    const talked = await voiced(
+      new Request("http://localhost/v1/talk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          query: "local-first",
+          privacy: ["P1"],
+          history: [
+            { role: "owner", text: "さっきの話" },
+            { role: "system", text: "紅茶だよ" },
+          ],
+        }),
+      }),
+    );
+    expect(talked.status).toBe(200);
+    expect(await talked.json()).toEqual({
+      reply: "さっきの話 紅茶だよ 聞いた。local-first local-first software",
+    });
+
+    const plain = createApiHandler({ application });
+    const remembered = await plain(
+      new Request("http://localhost/v1/talk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: "local-first", privacy: ["P1"] }),
+      }),
+    );
+    expect(await remembered.json()).toEqual({ reply: "local-first software" });
+
+    const empty = await plain(
+      new Request("http://localhost/v1/talk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: "nothing-stored-zzz", privacy: ["P1"] }),
+      }),
+    );
+    expect(await empty.json()).toEqual({ reply: "記憶にはまだない話だね。続きを聞かせて。" });
+
+    const broken = createApiHandler({
+      application,
+      voice: {
+        reply() {
+          return Promise.reject(new Error("model down"));
+        },
+      },
+    });
+    const fellBack = await broken(
+      new Request("http://localhost/v1/talk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: "local-first", privacy: ["P1"] }),
+      }),
+    );
+    expect(await fellBack.json()).toEqual({ reply: "local-first software" });
+  });
 });
