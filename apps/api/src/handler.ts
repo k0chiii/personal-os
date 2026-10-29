@@ -578,7 +578,18 @@ function errorResponse(error: unknown): Response {
 }
 
 const TALK_FALLBACK = "記憶にはまだない話だね。続きを聞かせて。";
+const TALK_UNSPOKEN = "覚えてることはあるよ。もう一度聞いて。";
 const TALK_HISTORY_LIMIT = 12;
+
+/** True when `spoken` still contains a memory line, so it is a recital rather than a reply. */
+export function quotesMemory(spoken: string, memory: readonly string[]): boolean {
+  const text = spoken.replace(/\s+/gu, "");
+  if (text.length === 0) return false;
+  return memory.some((line) => {
+    const ground = line.replace(/\s+/gu, "");
+    return ground.length >= 4 && text.includes(ground);
+  });
+}
 
 function rememberedLines(
   assertions: readonly { readonly object: string }[],
@@ -629,12 +640,12 @@ async function spokenReply(
   if (voice !== undefined) {
     try {
       const spoken = (await voice.reply(input)).trim();
-      if (spoken.length > 0) return spoken;
+      if (spoken.length > 0 && !quotesMemory(spoken, input.memory)) return spoken;
     } catch {
-      // An empty or failed model still leaves a sentence the owner can answer.
+      // A failed model still leaves a sentence the owner can answer.
     }
   }
-  if (input.memory.length > 0) return input.memory.join("\n");
+  if (input.memory.length > 0) return TALK_UNSPOKEN;
   return TALK_FALLBACK;
 }
 

@@ -218,13 +218,13 @@ describe("HTTP API", () => {
     expect(await response.json()).toMatchObject({ code: "invalid_request" });
   });
 
-  it("answers a talk from the voice, and from memory when the voice is absent", async () => {
+  it("answers a talk in the voice's own words, and does not recite memory", async () => {
     await seedPreference();
     const voiced = createApiHandler({
       application,
       voice: {
-        async reply({ message, memory, history }) {
-          return `${history.map((line) => line.text).join(" ")} 聞いた。${message} ${memory.join(" ")}`.trim();
+        async reply({ message, history }) {
+          return `${history.map((line) => line.text).join(" ")} 聞いた。${message} が好きなんだね。`.trim();
         },
       },
     });
@@ -244,8 +244,25 @@ describe("HTTP API", () => {
     );
     expect(talked.status).toBe(200);
     expect(await talked.json()).toEqual({
-      reply: "さっきの話 紅茶だよ 聞いた。local-first local-first software",
+      reply: "さっきの話 紅茶だよ 聞いた。local-first が好きなんだね。",
     });
+
+    const reciting = createApiHandler({
+      application,
+      voice: {
+        async reply({ memory }) {
+          return memory.join("\n");
+        },
+      },
+    });
+    const recited = await reciting(
+      new Request("http://localhost/v1/talk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: "local-first", privacy: ["P1"] }),
+      }),
+    );
+    expect(await recited.json()).toEqual({ reply: "覚えてることはあるよ。もう一度聞いて。" });
 
     const plain = createApiHandler({ application });
     const remembered = await plain(
@@ -255,7 +272,7 @@ describe("HTTP API", () => {
         body: JSON.stringify({ query: "local-first", privacy: ["P1"] }),
       }),
     );
-    expect(await remembered.json()).toEqual({ reply: "local-first software" });
+    expect(await remembered.json()).toEqual({ reply: "覚えてることはあるよ。もう一度聞いて。" });
 
     const empty = await plain(
       new Request("http://localhost/v1/talk", {
@@ -281,6 +298,6 @@ describe("HTTP API", () => {
         body: JSON.stringify({ query: "local-first", privacy: ["P1"] }),
       }),
     );
-    expect(await fellBack.json()).toEqual({ reply: "local-first software" });
+    expect(await fellBack.json()).toEqual({ reply: "覚えてることはあるよ。もう一度聞いて。" });
   });
 });
