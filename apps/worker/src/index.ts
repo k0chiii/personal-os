@@ -15,6 +15,7 @@ import {
 import { OpenAiAdapter } from "@personal-os/adapters-openai";
 import {
   createApiHandler,
+  quotesMemory,
   type ApiAuthenticator,
   type ApiRateLimiter,
   type ConversationVoice,
@@ -34,14 +35,22 @@ export interface WorkerEnvironment {
   readonly REQUIRE_ACCESS?: string;
   readonly OPENAI_API_KEY?: string;
   readonly OPENAI_MODEL?: string;
-  readonly AI?: {
-    run(
-      model: string,
-      input: {
-        messages: readonly { role: "system" | "user" | "assistant"; content: string }[];
-      },
-    ): Promise<unknown>;
-  };
+  readonly AI?: WorkersAiBinding;
+}
+
+interface WorkersAiBinding {
+  run(
+    model: string,
+    input: {
+      readonly messages: readonly {
+        readonly role: "system" | "user" | "assistant";
+        readonly content: string;
+      }[];
+      readonly temperature?: number;
+      readonly max_tokens?: number;
+      readonly repetition_penalty?: number;
+    },
+  ): Promise<unknown>;
 }
 
 function application(environment: WorkerEnvironment): PersonalOsApplication {
@@ -97,34 +106,64 @@ function workersAiWording(ai: NonNullable<WorkerEnvironment["AI"]>): {
 }
 
 const TALK_SYSTEM =
-  "あなたは個人の記憶を持つ対話相手です。日本語で、友達に話すように短く返してください。渡された記憶があれば会話に使い、記憶にない事実は作らないでください。記憶がなくても会話は続けてください。見出しや箇条書きは書かないでください。";
+  "あなたは、この人の記憶を根拠に話す対話相手です。日本語で、友達に話すように1つか2つの短い文で返してください。記憶の文は根拠であり、読む原稿ではありません。同じ文をそのまま出したり、改行で並べたりしないでください。相手の最後の発言に自分の言葉で答え、その答えに関係する記憶だけを言い換えて織り込んでください。関係ない記憶は出さないでください。これまでの返事に原文が混ざっていても、それに倣わないでください。記憶にない事実は作らないでください。記憶がなくても会話は続けてください。見出し、箇条書き、ラベルは書かないでください。";
+const TALK_RETRY_SYSTEM =
+  "さっきの返事は記憶の原文でした。原文は出さず、相手の発言に自分の言葉で一文だけ返してください。関係する根拠は言い換えてください。";
 
-function workersAiVoice(ai: NonNullable<WorkerEnvironment["AI"]>): ConversationVoice {
+export function workersAiVoice(ai: WorkersAiBinding): ConversationVoice {
   return {
-    async reply({ message, memory, history }) {
-      const remembered =
-        memory.length === 0 ? message : `記憶:\n${memory.join("\n")}\n\n相手:\n${message}`;
-      const result = await ai.run(QUESTION_REWRITE_MODEL, {
-        messages: [
-          { role: "system", content: TALK_SYSTEM },
-          ...history.map((line) => ({
-            role: line.role === "owner" ? ("user" as const) : ("assistant" as const),
-            content: line.text,
-          })),
-          { role: "user", content: remembered },
-        ],
-      });
-      return workersAiText(result);
+    async reply(input) {
+      const first = await speak(ai, input, TALK_SYSTEM);
+      if (acceptsTalk(first, input.memory)) return first;
+      const system = quotesMemory(first, input.memory) ? TALK_RETRY_SYSTEM : TALK_SYSTEM;
+      return speak(ai, input, system);
     },
   };
 }
 
+async function speak(
+  ai: WorkersAiBinding,
+  input: {
+    readonly message: string;
+    readonly memory: readonly string[];
+    readonly history: readonly { readonly role: "owner" | "system"; readonly text: string }[];
+  },
+  system: string,
+): Promise<string> {
+  try {
+    const result = await ai.run(QUESTION_REWRITE_MODEL, {
+      messages: [
+        { role: "system", content: system },
+        ...input.history.map((line) => ({
+          role: line.role === "owner" ? ("user" as const) : ("assistant" as const),
+          content: line.text,
+        })),
+        { role: "user", content: talkUserContent(input.message, input.memory) },
+      ],
+      temperature: 0.4,
+      max_tokens: 180,
+      repetition_penalty: 1.2,
+    });
+    return workersAiText(result).trim();
+  } catch {
+    return "";
+  }
+}
+
+function talkUserContent(message: string, memory: readonly string[]): string {
+  if (memory.length === 0) return message;
+  return `根拠:\n${memory.join("\n")}\n\n相手:\n${message}`;
+}
+
+function acceptsTalk(spoken: string, memory: readonly string[]): boolean {
+  return spoken.length > 0 && !quotesMemory(spoken, memory);
+}
+
 function workersAiText(result: unknown): string {
   if (typeof result === "string") return result;
-  if (typeof result === "object" && result !== null && "response" in result) {
-    const response = result.response;
-    if (typeof response === "string") return response;
-  }
+  if (typeof result !== "object" || result === null) return "";
+  if ("response" in result && typeof result.response === "string") return result.response;
+  if ("result" in result && result.result !== result) return workersAiText(result.result);
   return "";
 }
 
